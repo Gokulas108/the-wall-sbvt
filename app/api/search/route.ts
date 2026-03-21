@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
       qty: r.qty,
       created_at: r.created_at,
       subtitle: `Name inscription · ${r.qty} slot${r.qty > 1 ? "s" : ""}`,
+      serial_number: null,
     })),
     ...phoneRows.map((r) => ({
       kind: "phone",

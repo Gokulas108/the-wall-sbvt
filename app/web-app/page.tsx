@@ -462,6 +462,7 @@ export default function WebAppPage() {
           });
         } else {
           [focusBaseRef.current, focusColorRef.current].forEach((layer) => {
+            if (!layer) return;
             layer.style.transformOrigin = "0 0";
             layer.style.transition = "transform 260ms ease-out";
             layer.style.transform = "translate3d(0, 0, 0) scale(1)";

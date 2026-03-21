@@ -40,10 +40,10 @@ export async function POST(
   let submission: {
     id: number;
     createdAt: Date;
-  } | null = null;
+  };
 
   try {
-    await prisma.$transaction(
+    submission = await prisma.$transaction(
       async (tx) => {
         const used = await tx.blockName.aggregate({
           where: { blockId },
@@ -75,7 +75,7 @@ export async function POST(
         });
 
         await tx.blockName.create({ data: { blockId, name, qty } });
-        submission = createdSubmission;
+        return createdSubmission;
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -92,13 +92,6 @@ export async function POST(
     return NextResponse.json(
       { error: "Another donation updated this block. Please retry." },
       { status: 409 },
-    );
-  }
-
-  if (!submission) {
-    return NextResponse.json(
-      { error: "Could not create donation." },
-      { status: 500 },
     );
   }
 
