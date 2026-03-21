@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model BlockName {
+  id        Int      @id @default(autoincrement())
+  blockId   String   @map("block_id")
+  name      String
+  qty       Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([blockId])
+  @@map("block_names")
+}
+
+model BlockSubmission {
+  id            Int      @id @default(autoincrement())
+  blockId       String   @map("block_id")
+  serialNumber  String?  @map("serial_number")
+  actionType    String   @map("action_type")
+  name          String
+  qty           Int      @default(1)
+  dateOfBirth   String   @map("date_of_birth")
+  email         String
+  phone         String
+  whatsapp      String
+  pledgeDueDays Int?     @map("pledge_due_days")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([blockId])
+  @@map("block_submissions")
+}

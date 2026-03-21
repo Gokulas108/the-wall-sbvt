@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wall-bg: #f2ece2;
+  --color-wall-card: #fffdfa;
+  --color-wall-deep: #2d2418;
+  --color-wall-sand: #f8f1e7;
+  --color-wall-ink: #10161f;
+  --color-wall-amber: #c96b1b;
+  --color-wall-amber-light: #e0b860;
+  --color-wall-amber-gold: #d7ad57;
+  --color-wall-text1: #21170d;
+  --color-wall-text2: #5f4b35;
+  --color-wall-muted: #8d785f;
+
+  --font-family-cinzel: "Cinzel", Georgia, serif;
+  --font-family-playfair: "Playfair Display", serif;
+  --font-family-dancing: "Dancing Script", cursive;
+  --font-family-cookie: "Cookie", cursive;
+  --font-family-stencil: "Arial Narrow", Arial, Helvetica, sans-serif;
+}
+
+/* ── Global ── */
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: var(--color-wall-bg);
+  color: var(--color-wall-text1);
+}
+
+/* ── Stencil Block Text (critical mosaic CSS) ── */
+.stencil-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0;
+  font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
+  font-size: 2px;
+  line-height: 1;
+  letter-spacing: 0;
+  font-weight: 700;
+  text-align: justify;
+  text-align-last: justify;
+  text-justify: inter-character;
+  word-break: break-all;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image: url("/sbvt.jpg");
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: 0;
+}
+
+.stencil-base {
+  filter: grayscale(1) contrast(1.15) brightness(1.08);
+}
+
+.stencil-base.color-mode {
+  filter: contrast(1.08) brightness(1.04) saturate(1.15);
+}
+
+.stencil-base.is-selected {
+  filter: contrast(1.08) brightness(1.04) saturate(1.15);
+}
+
+.stencil-color {
+  filter: saturate(1.5) contrast(1.1) brightness(1.05);
+}
+
+.stencil-color .hf {
+  visibility: hidden;
+}
+
+/* Focus view stencil */
+.focus-stencil {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0;
+  font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
+  font-size: 5.5px;
+  line-height: 1;
+  letter-spacing: 0;
+  font-weight: 700;
+  text-align: justify;
+  text-align-last: justify;
+  text-justify: inter-character;
+  word-break: break-all;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image: url("/sbvt.jpg");
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: 0;
+}
+
+.focus-stencil-color .hf {
+  visibility: hidden;
+}
+
+/* ── Marquee ── */
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 999px;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(201, 107, 27, 0.2);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
