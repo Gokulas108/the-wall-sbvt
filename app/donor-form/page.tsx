@@ -31,6 +31,18 @@ const PAGE_PASSWORD = "16108";
 const DONOR_FORM_AUTH_KEY = "kc-donor-form-auth-date";
 
 type BlockCapacity = { id: string; remaining: number };
+type DonationPaymentMethod = "cash" | "upi";
+
+function buildRandomQrPattern(seed: number) {
+  const size = 21;
+  const cells: number[] = [];
+  let value = seed || 1;
+  for (let i = 0; i < size * size; i++) {
+    value = (value * 1664525 + 1013904223) >>> 0;
+    cells.push((value >> 28) & 1);
+  }
+  return { size, cells };
+}
 
 function buildSharedSerial(
   actionType: "donate" | "pledge",
@@ -65,6 +77,11 @@ export default function DonorFormPage() {
   >([]);
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [pledgeDays, setPledgeDays] = useState<number | null>(null);
+  const [showDonatePaymentModal, setShowDonatePaymentModal] = useState(false);
+  const [donationPaymentMethod, setDonationPaymentMethod] =
+    useState<DonationPaymentMethod>("cash");
+  const [donationPaymentReference, setDonationPaymentReference] = useState("");
+  const [qrSeed, setQrSeed] = useState<number>(() => Date.now());
 
   // Auto-assign block if not selected
   const [availableBlocks, setAvailableBlocks] = useState<
@@ -247,6 +264,8 @@ export default function DonorFormPage() {
   async function handleSubmit(
     actionType: "donate" | "pledge",
     selectedPledgeDays?: number,
+    paymentMethod?: DonationPaymentMethod,
+    paymentReference?: string,
   ) {
     const qtyNumber = parseInt(qty, 10);
     if (!name.trim()) {
@@ -285,6 +304,12 @@ export default function DonorFormPage() {
       phone: `${phoneCode} ${phone.trim()}`,
       whatsapp: `${sameAsPhone ? phoneCode : whatsappCode} ${whatsappVal.trim()}`,
     };
+    if (actionType === "donate" && paymentMethod) {
+      payloadBase.payment_method = paymentMethod;
+      if (paymentMethod === "upi") {
+        payloadBase.payment_reference = (paymentReference || "").trim();
+      }
+    }
     payloadBase.receipt_serial = buildSharedSerial(actionType, blockIdStr);
     if (actionType === "pledge")
       payloadBase.pledge_due_days = selectedPledgeDays;
@@ -333,11 +358,17 @@ export default function DonorFormPage() {
       setIsBlockManuallyChosen(false);
       setPledgeDays(null);
       setShowPledgeModal(false);
+      setShowDonatePaymentModal(false);
+      setDonationPaymentMethod("cash");
+      setDonationPaymentReference("");
+      setQrSeed(Date.now());
     } catch {
       setStatus("Network error. Please try again.");
     }
     setSubmitting(false);
   }
+
+  const qrPattern = buildRandomQrPattern(qrSeed);
 
   if (!authChecked) {
     return (
@@ -575,6 +606,185 @@ export default function DonorFormPage() {
                     if (!pledgeDays) return;
                     void handleSubmit("pledge", pledgeDays);
                   }}
+                >
+                  {submitting ? "Processing..." : "Continue"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDonatePaymentModal && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+            style={{
+              background: "rgba(14,7,4,0.7)",
+              backdropFilter: "blur(8px)",
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowDonatePaymentModal(false)}
+          >
+            <motion.div
+              className="w-full max-w-md p-5 sm:p-6 rounded-2xl"
+              style={{
+                background:
+                  "linear-gradient(145deg, #2a150b, #3c1f0f 52%, #4a2610)",
+                border: "1px solid rgba(228,180,121,0.35)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.46)",
+              }}
+              initial={{ scale: 0.92, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: -10 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                className="text-xl font-bold mb-2"
+                style={{
+                  fontFamily: '"Cinzel", Georgia, serif',
+                  color: "#fff4e3",
+                }}
+              >
+                Complete Donation
+              </h3>
+              <p
+                className="text-sm mb-4"
+                style={{ color: "rgba(244,224,197,0.86)" }}
+              >
+                Select payment method to continue.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {[
+                  { value: "cash", label: "Cash" },
+                  { value: "upi", label: "UPI" },
+                ].map((method) => (
+                  <button
+                    key={method.value}
+                    type="button"
+                    className="py-2.5 rounded-xl text-sm font-bold"
+                    style={{
+                      background:
+                        donationPaymentMethod === method.value
+                          ? "rgba(201,107,27,0.3)"
+                          : "rgba(255,246,233,0.08)",
+                      border: `1px solid ${donationPaymentMethod === method.value ? "rgba(201,107,27,0.55)" : "rgba(228,180,121,0.2)"}`,
+                      color: "#fff5e7",
+                    }}
+                    onClick={() =>
+                      setDonationPaymentMethod(
+                        method.value as DonationPaymentMethod,
+                      )
+                    }
+                  >
+                    {method.label}
+                  </button>
+                ))}
+              </div>
+
+              {donationPaymentMethod === "upi" && (
+                <div
+                  className="rounded-xl p-3 mb-4"
+                  style={{
+                    background: "rgba(255,246,233,0.08)",
+                    border: "1px solid rgba(228,180,121,0.2)",
+                  }}
+                >
+                  <div className="flex items-center justify-center mb-3">
+                    <div
+                      className="rounded-lg p-2"
+                      style={{
+                        background: "#fff",
+                        border: "1px solid rgba(0,0,0,0.12)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 180,
+                          height: 180,
+                          display: "grid",
+                          gridTemplateColumns: `repeat(${qrPattern.size}, 1fr)`,
+                          gap: 1,
+                          background: "#fff",
+                        }}
+                      >
+                        {qrPattern.cells.map((cell, index) => (
+                          <span
+                            key={index}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              background: cell ? "#111" : "#fff",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <label
+                    className="text-xs font-bold tracking-wider uppercase"
+                    style={{ color: "rgba(255,230,198,0.85)" }}
+                  >
+                    Payment Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={donationPaymentReference}
+                    onChange={(e) => setDonationPaymentReference(e.target.value)}
+                    maxLength={50}
+                    placeholder="Enter UPI reference"
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl text-base outline-none"
+                    style={{
+                      background: "rgba(255,250,244,0.96)",
+                      border: "1px solid rgba(222,182,131,0.36)",
+                      color: "#2a1509",
+                      fontSize: "16px",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 py-2.5 rounded-xl font-semibold"
+                  style={{
+                    background: "rgba(255,246,233,0.1)",
+                    border: "1px solid rgba(228,180,121,0.2)",
+                    color: "#ffe9cc",
+                  }}
+                  onClick={() => setShowDonatePaymentModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 py-2.5 rounded-xl font-bold text-white"
+                  style={{
+                    background: "linear-gradient(135deg, #c96b1b, #e0b860)",
+                    opacity:
+                      submitting ||
+                      (donationPaymentMethod === "upi" &&
+                        !donationPaymentReference.trim())
+                        ? 0.65
+                        : 1,
+                  }}
+                  disabled={
+                    submitting ||
+                    (donationPaymentMethod === "upi" &&
+                      !donationPaymentReference.trim())
+                  }
+                  onClick={() =>
+                    void handleSubmit(
+                      "donate",
+                      undefined,
+                      donationPaymentMethod,
+                      donationPaymentReference,
+                    )
+                  }
                 >
                   {submitting ? "Processing..." : "Continue"}
                 </button>
@@ -948,7 +1158,12 @@ export default function DonorFormPage() {
               }}
               whileTap={{ scale: 0.98 }}
               disabled={submitting}
-              onClick={() => void handleSubmit("donate")}
+              onClick={() => {
+                setDonationPaymentMethod("cash");
+                setDonationPaymentReference("");
+                setQrSeed(Date.now() + Math.floor(Math.random() * 1000));
+                setShowDonatePaymentModal(true);
+              }}
             >
               {submitting ? "Processing..." : "Donate Now"}
             </motion.button>
