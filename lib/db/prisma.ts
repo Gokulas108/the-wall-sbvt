@@ -1,15 +1,21 @@
-import { PrismaClient } from '@prisma/client';
-import { PrismaLibSql } from '@prisma/adapter-libsql';
-import path from 'path';
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-function createPrismaClient() {
-  const dbPath = path.join(process.cwd(), 'dev.db');
-  const adapter = new PrismaLibSql({ url: `file:${dbPath}` });
-  return new PrismaClient({ adapter } as never);
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("DATABASE_URL is not set");
 }
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const adapter = new PrismaPg({ connectionString });
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+    log: ["query", "error"],
+  });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
