@@ -33,17 +33,6 @@ const DONOR_FORM_AUTH_KEY = "kc-donor-form-auth-date";
 type BlockCapacity = { id: string; remaining: number };
 type DonationPaymentMethod = "cash" | "upi";
 
-function buildRandomQrPattern(seed: number) {
-  const size = 21;
-  const cells: number[] = [];
-  let value = seed || 1;
-  for (let i = 0; i < size * size; i++) {
-    value = (value * 1664525 + 1013904223) >>> 0;
-    cells.push((value >> 28) & 1);
-  }
-  return { size, cells };
-}
-
 function buildSharedSerial(
   actionType: "donate" | "pledge",
   primaryBlockId: string,
@@ -81,7 +70,6 @@ export default function DonorFormPage() {
   const [donationPaymentMethod, setDonationPaymentMethod] =
     useState<DonationPaymentMethod>("cash");
   const [donationPaymentReference, setDonationPaymentReference] = useState("");
-  const [qrSeed, setQrSeed] = useState<number>(() => Date.now());
 
   // Auto-assign block if not selected
   const [availableBlocks, setAvailableBlocks] = useState<
@@ -361,14 +349,11 @@ export default function DonorFormPage() {
       setShowDonatePaymentModal(false);
       setDonationPaymentMethod("cash");
       setDonationPaymentReference("");
-      setQrSeed(Date.now());
     } catch {
       setStatus("Network error. Please try again.");
     }
     setSubmitting(false);
   }
-
-  const qrPattern = buildRandomQrPattern(qrSeed);
 
   if (!authChecked) {
     return (
@@ -701,27 +686,19 @@ export default function DonorFormPage() {
                         border: "1px solid rgba(0,0,0,0.12)",
                       }}
                     >
-                      <div
+                      <img
+                        src="/SBVTUPI.jpg"
+                        alt="UPI QR Code"
+                        width={180}
+                        height={180}
                         style={{
                           width: 180,
                           height: 180,
-                          display: "grid",
-                          gridTemplateColumns: `repeat(${qrPattern.size}, 1fr)`,
-                          gap: 1,
-                          background: "#fff",
+                          objectFit: "cover",
+                          borderRadius: 4,
+                          display: "block",
                         }}
-                      >
-                        {qrPattern.cells.map((cell, index) => (
-                          <span
-                            key={index}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              background: cell ? "#111" : "#fff",
-                            }}
-                          />
-                        ))}
-                      </div>
+                      />
                     </div>
                   </div>
                   <label
@@ -1163,7 +1140,6 @@ export default function DonorFormPage() {
               onClick={() => {
                 setDonationPaymentMethod("cash");
                 setDonationPaymentReference("");
-                setQrSeed(Date.now() + Math.floor(Math.random() * 1000));
                 setShowDonatePaymentModal(true);
               }}
             >
