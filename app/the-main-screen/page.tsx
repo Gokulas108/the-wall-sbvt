@@ -39,6 +39,8 @@ type ActiveDonorPopup = {
 };
 
 const MAX_ACTIVE_POPUPS = 6;
+const PAGE_PASSWORD = "16108";
+const MAIN_SCREEN_AUTH_KEY = "kc-main-screen-auth-date";
 const COL_LABELS = Array.from({ length: GRID_SIZE }, (_, index) =>
   String.fromCharCode(65 + index),
 );
@@ -97,6 +99,43 @@ function buildFocusColorMarkup(
 }
 
 export default function TheMainScreen() {
+  const [isMobile, setIsMobile] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const isSmall = window.matchMedia("(max-width: 1024px)").matches;
+      setIsMobile(isSmall);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const savedDate = localStorage.getItem(MAIN_SCREEN_AUTH_KEY);
+    if (savedDate === today) {
+      setIsAuthorized(true);
+      setAuthChecked(true);
+      return;
+    }
+
+    let value = window.prompt("Enter password");
+    while (value !== null && value !== PAGE_PASSWORD) {
+      value = window.prompt("Incorrect password. Enter password");
+    }
+
+    if (value === PAGE_PASSWORD) {
+      localStorage.setItem(MAIN_SCREEN_AUTH_KEY, today);
+      setIsAuthorized(true);
+    } else {
+      setIsAuthorized(false);
+    }
+    setAuthChecked(true);
+  }, []);
+
   const { blocks, loading, fetchBlock } = useBlockData();
   const [wallReady, setWallReady] = useState(false);
   const [activePopups, setActivePopups] = useState<ActiveDonorPopup[]>([]);
@@ -486,6 +525,65 @@ export default function TheMainScreen() {
       setTotalCollected(total * COST_PER_NAME);
     }
   }, [blocks, loading]);
+
+  if (!authChecked) {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ background: "#f2ece2", color: "#2a1509" }}
+      >
+        <p>Checking access...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthorized) {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ background: "#f2ece2", color: "#2a1509" }}
+      >
+        <p>Access denied.</p>
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <div
+        className="min-h-screen w-full flex flex-col items-center justify-center px-4 py-8"
+        style={{ background: "#f2ece2" }}
+      >
+        <div className="text-center max-w-md">
+          <h1
+            className="text-3xl font-bold mb-4"
+            style={{
+              fontFamily: '"Playfair Display", serif',
+              color: "#2a1509",
+            }}
+          >
+            View on Desktop
+          </h1>
+          <p className="text-sm mb-6" style={{ color: "#5c4a3a" }}>
+            The living wall experience is best viewed on a computer browser.
+            Please open this page on a desktop or laptop for the full
+            interactive experience.
+          </p>
+          <p className="text-xs" style={{ color: "#8d785f" }}>
+            You can still submit inscriptions from the{" "}
+            <a
+              href="/donor-form"
+              className="font-semibold"
+              style={{ color: "#c96b1b" }}
+            >
+              donation form
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -906,20 +1004,6 @@ export default function TheMainScreen() {
 // Simple marquee component
 function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
   const names = new Set<string>();
-  // Static names
-  [
-    "Radhanath Swami",
-    "Lokanath Swami",
-    "Indradyumna Swami",
-    "Sacinandana Swami",
-    "Jayapataka Swami",
-    "Radharaman Das",
-    "Gaur Gopal Das",
-    "Amarendra Das",
-    "Vraja Vilas Das",
-    "Bhakti Charu Swami",
-  ].forEach((n) => names.add(n));
-
   blocks.forEach((b) => {
     b.names.forEach((n) => names.add(n.name));
   });

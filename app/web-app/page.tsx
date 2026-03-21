@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   startTransition,
   useState,
   useCallback,
@@ -200,6 +200,18 @@ function buildFocusColorMarkup(
 }
 
 export default function WebAppPage() {
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    const checkMobile = () => {
+      const isSmall = window.matchMedia("(max-width: 1024px)").matches;
+      setIsMobile(isSmall);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
   const router = useRouter();
   const {
     blocks,
@@ -886,6 +898,43 @@ export default function WebAppPage() {
     totalNames += b.total_used;
   });
 
+  if (isMobile) {
+    return (
+      <div
+        className="min-h-screen w-full flex flex-col items-center justify-center px-4 py-8"
+        style={{ background: "#f2ece2" }}
+      >
+        <div className="text-center max-w-md">
+          <h1
+            className="text-3xl font-bold mb-4"
+            style={{
+              fontFamily: '"Playfair Display", serif',
+              color: "#2a1509",
+            }}
+          >
+            View on Desktop
+          </h1>
+          <p className="text-sm mb-6" style={{ color: "#5c4a3a" }}>
+            The living wall experience is best viewed on a computer browser.
+            Please open this page on a desktop or laptop for the full
+            interactive experience.
+          </p>
+          <p className="text-xs" style={{ color: "#8d785f" }}>
+            You can still submit inscriptions from the{" "}
+            <a
+              href="/donor-form"
+              className="font-semibold"
+              style={{ color: "#c96b1b" }}
+            >
+              donation form
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen w-full overflow-x-hidden overflow-y-auto relative flex flex-col lg:h-screen lg:w-screen lg:overflow-hidden lg:flex-row"
@@ -984,7 +1033,7 @@ export default function WebAppPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") void runSearch();
               }}
-              placeholder="e.g. Gokul Das · +91 987... · DON-A1-000123"
+              placeholder="e.g. Jayapataka Swami · +91 987... · DON-A1-000123"
               className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
               style={{
                 background: "rgba(255,250,244,0.96)",
@@ -1126,6 +1175,7 @@ export default function WebAppPage() {
                 className="overflow-hidden"
               >
                 {[
+                  "Hover on a block to see its details and current inscriptions.",
                   "Choose a block and dedicate it for yourself or your family.",
                   "Enter details once, then inscribe one or many names together.",
                   "Complete your donation to secure the inscription instantly.",
@@ -1157,6 +1207,45 @@ export default function WebAppPage() {
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+
+        {/* Complete Pledge */}
+        <div
+          className="p-5 rounded-2xl"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(38,20,10,0.9), rgba(48,24,12,0.78))",
+            border: "1px solid rgba(170,120,75,0.14)",
+            boxShadow: "0 18px 40px rgba(10,6,4,0.36)",
+          }}
+        >
+          <h3
+            className="text-lg font-bold"
+            style={{
+              fontFamily: '"Playfair Display", serif',
+              color: "#fff1df",
+            }}
+          >
+            Already taken a pledge to donate?
+          </h3>
+          <p
+            className="text-sm mt-2 mb-3"
+            style={{ color: "rgba(245,232,216,0.9)" }}
+          >
+            Complete your pledge donation and secure the inscription for your
+            chosen devotee name.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/complete-pledge")}
+            className="px-4 py-2 rounded-lg text-sm font-bold"
+            style={{
+              background: "linear-gradient(135deg, #c96b1b, #e0b860)",
+              color: "#fff",
+            }}
+          >
+            Complete Now
+          </button>
         </div>
 
         {/* Stats */}
@@ -2178,15 +2267,6 @@ export default function WebAppPage() {
 
 function WebAppMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
   const names = new Set<string>();
-  [
-    "Radhanath Swami",
-    "Lokanath Swami",
-    "Indradyumna Swami",
-    "Sacinandana Swami",
-    "Jayapataka Swami",
-    "Radharaman Das",
-    "Gaur Gopal Das",
-  ].forEach((n) => names.add(n));
   blocks.forEach((b) => b.names.forEach((n) => names.add(n.name)));
   const allNames = Array.from(names);
   if (allNames.length === 0) return null;

@@ -4,9 +4,10 @@ import { prisma } from "@/lib/db/prisma";
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (query.length < 2) return NextResponse.json({ query, results: [] });
+  const queryLower = query.toLowerCase();
 
   const nameRows = await prisma.blockName.findMany({
-    where: { name: { contains: query } },
+    where: { name: { contains: query, mode: "insensitive" } },
     orderBy: { qty: "desc" },
     take: 20,
   });
@@ -30,36 +31,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const phoneRows = await prisma.blockSubmission.findMany({
+  const submissionRows = await prisma.blockSubmission.findMany({
     where: {
-      OR: [{ phone: { contains: query } }, { whatsapp: { contains: query } }],
+      OR: [
+        { name: { contains: query, mode: "insensitive" } },
+        { phone: { contains: query, mode: "insensitive" } },
+        { whatsapp: { contains: query, mode: "insensitive" } },
+        { serialNumber: { contains: query, mode: "insensitive" } },
+      ],
     },
     orderBy: { createdAt: "desc" },
-    take: 20,
+    take: 40,
   });
-
-  const serialMatch = query
-    .toUpperCase()
-    .match(/^(DON|PLG)-([A-Z]\d+)-(\d{1,})$/);
-  let serialRows: Array<{
-    id: number;
-    blockId: string;
-    name: string;
-    qty: number;
-    actionType: string;
-    phone: string;
-    createdAt: Date;
-  }> = [];
-
-  if (serialMatch) {
-    const numericId = parseInt(serialMatch[3], 10);
-    const row = await prisma.blockSubmission.findUnique({
-      where: { id: numericId },
-    });
-    if (row) {
-      serialRows = [row];
-    }
-  }
 
   const results = [
     ...Array.from(groupedNames.values()).map((r) => ({
@@ -70,25 +53,35 @@ export async function GET(req: NextRequest) {
       created_at: r.created_at,
       subtitle: `Name inscription · ${r.qty} slot${r.qty > 1 ? "s" : ""}`,
       serial_number: null,
+      action_type: null,
+      phone: null,
+      email: null,
     })),
-    ...phoneRows.map((r) => ({
-      kind: "phone",
-      label: r.name,
-      block_id: r.blockId,
-      qty: r.qty,
-      created_at: r.createdAt.toISOString(),
-      subtitle: `Phone/WhatsApp match · ${r.phone}`,
-      serial_number: `${r.actionType === "pledge" ? "PLG" : "DON"}-${r.blockId}-${String(r.id).padStart(6, "0")}`,
-    })),
-    ...serialRows.map((r) => ({
-      kind: "serial",
-      label: r.name,
-      block_id: r.blockId,
-      qty: r.qty,
-      created_at: r.createdAt.toISOString(),
-      subtitle: `Serial match · ${r.actionType === "pledge" ? "Pledge" : "Donation"}`,
-      serial_number: `${r.actionType === "pledge" ? "PLG" : "DON"}-${r.blockId}-${String(r.id).padStart(6, "0")}`,
-    })),
+    ...submissionRows.map((r) => {
+      const serialNumber =
+        r.serialNumber && r.serialNumber.trim().length > 0
+          ? r.serialNumber
+          : `${r.actionType === "pledge" ? "PLG" : "DON"}-${r.blockId}-${String(r.id).padStart(6, "0")}`;
+      const serialLower = serialNumber.toLowerCase();
+      const phoneLower = (r.phone || "").toLowerCase();
+      const waLower = (r.whatsapp || "").toLowerCase();
+      const isSerialHit = serialLower.includes(queryLower);
+      const isPhoneHit =
+        phoneLower.includes(queryLower) || waLower.includes(queryLower);
+
+      return {
+        kind: isSerialHit ? "serial" : isPhoneHit ? "phone" : "name",
+        label: r.name,
+        block_id: r.blockId,
+        qty: r.qty,
+        created_at: r.createdAt.toISOString(),
+        subtitle: `${isSerialHit ? "Serial" : isPhoneHit ? "Phone/WhatsApp" : "Name"} match · ${r.actionType === "pledge" ? "Pledge" : "Donation"}`,
+        serial_number: serialNumber,
+        action_type: r.actionType,
+        phone: r.phone,
+        email: r.email,
+      };
+    }),
   ];
 
   const deduped = new Map<string, (typeof results)[number]>();

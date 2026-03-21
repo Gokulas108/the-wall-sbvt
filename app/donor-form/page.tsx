@@ -27,6 +27,9 @@ const COUNTRY_CODES = [
   ["South Africa", "+27"],
 ];
 
+const PAGE_PASSWORD = "16108";
+const DONOR_FORM_AUTH_KEY = "kc-donor-form-auth-date";
+
 type BlockCapacity = { id: string; remaining: number };
 
 function buildSharedSerial(
@@ -40,6 +43,8 @@ function buildSharedSerial(
 }
 
 export default function DonorFormPage() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
   const [name, setName] = useState("");
   const [qty, setQty] = useState("1");
   const [dob, setDob] = useState("");
@@ -125,6 +130,29 @@ export default function DonorFormPage() {
     },
     [pickRandomFittingBlock],
   );
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const savedDate = localStorage.getItem(DONOR_FORM_AUTH_KEY);
+    if (savedDate === today) {
+      setIsAuthorized(true);
+      setAuthChecked(true);
+      return;
+    }
+
+    let value = window.prompt("Enter password");
+    while (value !== null && value !== PAGE_PASSWORD) {
+      value = window.prompt("Incorrect password. Enter password");
+    }
+
+    if (value === PAGE_PASSWORD) {
+      localStorage.setItem(DONOR_FORM_AUTH_KEY, today);
+      setIsAuthorized(true);
+    } else {
+      setIsAuthorized(false);
+    }
+    setAuthChecked(true);
+  }, []);
 
   useEffect(() => {
     void loadAvailableBlocks();
@@ -309,6 +337,28 @@ export default function DonorFormPage() {
       setStatus("Network error. Please try again.");
     }
     setSubmitting(false);
+  }
+
+  if (!authChecked) {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ background: "#f2ece2", color: "#2a1509" }}
+      >
+        <p>Checking access...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthorized) {
+    return (
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ background: "#f2ece2", color: "#2a1509" }}
+      >
+        <p>Access denied.</p>
+      </div>
+    );
   }
 
   return (

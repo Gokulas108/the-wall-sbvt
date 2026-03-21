@@ -40,6 +40,7 @@ export async function POST(
   let submission: {
     id: number;
     createdAt: Date;
+    serialNumber: string | null;
   };
 
   try {
@@ -75,7 +76,20 @@ export async function POST(
         });
 
         await tx.blockName.create({ data: { blockId, name, qty } });
-        return createdSubmission;
+
+        const serialNumber =
+          validInputSerial ||
+          `DON-${blockId}-${String(createdSubmission.id).padStart(6, "0")}`;
+
+        return tx.blockSubmission.update({
+          where: { id: createdSubmission.id },
+          data: { serialNumber },
+          select: {
+            id: true,
+            createdAt: true,
+            serialNumber: true,
+          },
+        });
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -103,19 +117,8 @@ export async function POST(
   const amount = qty * COST_PER_NAME;
 
   const serialNumber =
-    validInputSerial ||
+    submission.serialNumber ||
     `DON-${blockId}-${String(submission.id).padStart(6, "0")}`;
-
-  try {
-    await prisma.$executeRawUnsafe(
-      "ALTER TABLE block_submissions ADD COLUMN serial_number TEXT",
-    );
-  } catch {}
-  await prisma.$executeRawUnsafe(
-    "UPDATE block_submissions SET serial_number = ? WHERE id = ?",
-    serialNumber,
-    submission.id,
-  );
 
   const receipt = {
     receipt_type: "donate",
