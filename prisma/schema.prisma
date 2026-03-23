@@ -6,6 +6,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum DonorFormRole {
+  admin
+  volunteer
+}
+
 model BlockName {
   id        Int      @id @default(autoincrement())
   blockId   String   @map("block_id")
@@ -28,9 +33,42 @@ model BlockSubmission {
   email         String
   phone         String
   whatsapp      String
+  collectedByUserId Int? @map("collected_by_user_id")
   pledgeDueDays Int?     @map("pledge_due_days")
   createdAt     DateTime @default(now()) @map("created_at")
+  collectedByUser DonorFormUser? @relation(fields: [collectedByUserId], references: [id])
 
   @@index([blockId])
+  @@index([collectedByUserId])
   @@map("block_submissions")
+}
+
+model DonorFormUser {
+  id           Int            @id @default(autoincrement())
+  username     String         @unique
+  password     String
+  role         DonorFormRole
+  isActive     Boolean        @default(true) @map("is_active")
+  amountInCash Int            @default(0) @map("amount_in_cash")
+  amountPledge Int            @default(0) @map("amount_pledge")
+  amountTotal  Int            @default(0) @map("amount_total")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  sessions     DonorFormSession[]
+  submissions  BlockSubmission[]
+
+  @@map("donor_form_users")
+}
+
+model DonorFormSession {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    Int      @map("user_id")
+  user      DonorFormUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("donor_form_sessions")
 }

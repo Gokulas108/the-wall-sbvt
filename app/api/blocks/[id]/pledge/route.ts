@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { NAMES_PER_BLOCK, COST_PER_NAME } from "@/lib/mosaic/engine";
 import { eventBus } from "@/lib/events/emitter";
 import { Prisma } from "@prisma/client";
+import { getCurrentUserFromRequest } from "@/lib/auth/donor-form";
 
 export async function POST(
   req: NextRequest,
@@ -19,6 +20,7 @@ export async function POST(
   const whatsapp = String(body.whatsapp ?? "").trim();
   const pledgeDueDays = parseInt(body.pledge_due_days, 10);
   const receiptSerialInput = String(body.receipt_serial ?? "").trim();
+  const currentUser = await getCurrentUserFromRequest(req);
 
   if (!name)
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -67,6 +69,7 @@ export async function POST(
             email,
             phone,
             whatsapp,
+            collectedByUserId: currentUser?.id,
             pledgeDueDays,
           },
           select: { id: true, createdAt: true },
@@ -112,6 +115,15 @@ export async function POST(
   });
   const totalUsed = names.reduce((s, n) => s + n.qty, 0);
   const amount = qty * COST_PER_NAME;
+
+  if (currentUser) {
+    await prisma.donorFormUser.update({
+      where: { id: currentUser.id },
+      data: {
+        amountPledge: { increment: amount },
+      },
+    });
+  }
 
   const createdAt = submission.createdAt;
   const pledgeDueDate = new Date(createdAt.getTime() + pledgeDueDays * 86400000)

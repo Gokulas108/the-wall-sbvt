@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type FormEvent,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   formatINR,
@@ -27,11 +33,13 @@ const COUNTRY_CODES = [
   ["South Africa", "+27"],
 ];
 
-const PAGE_PASSWORD = "16108";
-const DONOR_FORM_AUTH_KEY = "kc-donor-form-auth-date";
-
 type BlockCapacity = { id: string; remaining: number };
 type DonationPaymentMethod = "cash" | "upi";
+type AuthUser = {
+  id: number;
+  username: string;
+  role: "admin" | "volunteer";
+};
 
 function buildSharedSerial(
   actionType: "donate" | "pledge",
@@ -44,8 +52,15 @@ function buildSharedSerial(
 }
 
 export default function DonorFormPage() {
+  const loginPinInputRef = useRef<HTMLInputElement | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [name, setName] = useState("");
   const [qty, setQty] = useState("1");
   const [dob, setDob] = useState("");
@@ -137,26 +152,30 @@ export default function DonorFormPage() {
   );
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const savedDate = localStorage.getItem(DONOR_FORM_AUTH_KEY);
-    if (savedDate === today) {
-      setIsAuthorized(true);
-      setAuthChecked(true);
-      return;
-    }
+    const run = async () => {
+      try {
+        const res = await fetch("/api/donor-form/me", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          setIsAuthorized(false);
+          setAuthUser(null);
+          return;
+        }
+        const data = (await res.json()) as { user?: AuthUser };
+        if (data.user) {
+          setAuthUser(data.user);
+          setIsAuthorized(true);
+          return;
+        }
+        setIsAuthorized(false);
+        setAuthUser(null);
+      } finally {
+        setAuthChecked(true);
+      }
+    };
 
-    let value = window.prompt("Enter password");
-    while (value !== null && value !== PAGE_PASSWORD) {
-      value = window.prompt("Incorrect password. Enter password");
-    }
-
-    if (value === PAGE_PASSWORD) {
-      localStorage.setItem(DONOR_FORM_AUTH_KEY, today);
-      setIsAuthorized(true);
-    } else {
-      setIsAuthorized(false);
-    }
-    setAuthChecked(true);
+    void run();
   }, []);
 
   useEffect(() => {
@@ -182,6 +201,22 @@ export default function DonorFormPage() {
       setWhatsappCode(phoneCode);
     }
   }, [sameAsPhone, phone, phoneCode]);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+    // ensure scroll happens after layout/update (works on mobile browsers)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          topRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+        } catch (e) {
+          window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        }
+      });
+    });
+  }, [isAuthorized]);
 
   const parsedQty = parseInt(qty, 10);
   const totalAmount =
@@ -249,6 +284,94 @@ export default function DonorFormPage() {
     return capacities;
   }, []);
 
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (authLoading) return;
+
+    setAuthError("");
+
+    const username = loginUsername.trim();
+    const password = loginPassword.trim();
+    if (!username || !/^\d{4}$/.test(password)) {
+      setAuthError("Enter username and a 4-digit PIN.");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/donor-form/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = (await res.json()) as { user?: AuthUser; error?: string };
+      if (!res.ok || !data.user) {
+        setAuthError(data.error || "Unable to login.");
+        return;
+      }
+
+      (document.activeElement as HTMLElement | null)?.blur();
+      setAuthUser(data.user);
+      setIsAuthorized(true);
+      setLoginPassword("");
+      setAuthError("");
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleAutoLogin(nextPin: string) {
+    if (authLoading) return;
+
+    setAuthError("");
+
+    const username = loginUsername.trim();
+    const password = nextPin.trim();
+    if (!username || !/^\d{4}$/.test(password)) {
+      setAuthError("Enter username and a 4-digit PIN.");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/donor-form/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = (await res.json()) as { user?: AuthUser; error?: string };
+      if (!res.ok || !data.user) {
+        setAuthError(data.error || "Unable to login.");
+        return;
+      }
+
+      (document.activeElement as HTMLElement | null)?.blur();
+      setAuthUser(data.user);
+      setIsAuthorized(true);
+      setLoginPassword("");
+      setAuthError("");
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    setAuthLoading(true);
+    try {
+      await fetch("/api/donor-form/logout", { method: "POST" });
+    } finally {
+      setAuthLoading(false);
+      setIsAuthorized(false);
+      setAuthUser(null);
+      setLoginPassword("");
+    }
+  }
+
   async function handleSubmit(
     actionType: "donate" | "pledge",
     selectedPledgeDays?: number,
@@ -264,8 +387,16 @@ export default function DonorFormPage() {
       setStatus("Please enter a valid quantity.");
       return;
     }
+    if (!phoneCode.trim()) {
+      setStatus("Please select a mobile country code.");
+      return;
+    }
     if (!phone.trim()) {
       setStatus("Please enter your phone number.");
+      return;
+    }
+    if (!sameAsPhone && !whatsappCode.trim()) {
+      setStatus("Please select a WhatsApp country code.");
       return;
     }
     const whatsappVal = sameAsPhone ? phone : whatsapp;
@@ -369,17 +500,101 @@ export default function DonorFormPage() {
   if (!isAuthorized) {
     return (
       <div
-        className="min-h-screen w-full flex items-center justify-center"
-        style={{ background: "#f2ece2", color: "#2a1509" }}
+        className="min-h-screen w-full flex items-center justify-center p-4"
+        style={{
+          background: "linear-gradient(145deg, #1a0f0a, #2a150c 50%, #1a0f0a)",
+          color: "#2a1509",
+        }}
       >
-        <p>Access denied.</p>
+        <motion.form
+          onSubmit={handleLogin}
+          autoComplete="off"
+          className="w-full max-w-sm rounded-2xl p-4 sm:p-5 flex flex-col gap-3"
+          style={{
+            background:
+              "linear-gradient(160deg, rgba(36,20,12,0.98), rgba(50,24,10,0.96) 46%, rgba(68,34,14,0.94))",
+            border: "1px solid rgba(170,120,75,0.2)",
+            boxShadow:
+              "0 30px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
+          }}
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1
+            className="text-2xl font-black"
+            style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#fff6ea" }}
+          >
+            Donor Form Login
+          </h1>
+          <p className="text-sm" style={{ color: "rgba(244,224,197,0.75)" }}>
+            Enter username and 4-digit PIN.
+          </p>
+
+          <input
+            type="text"
+            value={loginUsername}
+            onChange={(e) => setLoginUsername(e.target.value)}
+            placeholder="Username"
+            autoCapitalize="none"
+            className="w-full px-3 py-2.5 rounded-xl text-base outline-none"
+            style={{
+              background: "rgba(255,250,244,0.96)",
+              border: "1px solid rgba(222,182,131,0.36)",
+              color: "#2a1509",
+              fontSize: "16px",
+            }}
+          />
+          <input
+            type="tel"
+            value={loginPassword}
+            onChange={(e) => {
+              const nextPin = e.target.value.replace(/\D/g, "").slice(0, 4);
+              setLoginPassword(nextPin);
+              if (nextPin.length === 4) {
+                loginPinInputRef.current?.blur();
+                void handleAutoLogin(nextPin);
+              }
+            }}
+            placeholder="4-digit PIN"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            ref={loginPinInputRef}
+            className="w-full px-3 py-2.5 rounded-xl text-base outline-none"
+            style={{
+              background: "rgba(255,250,244,0.96)",
+              border: "1px solid rgba(222,182,131,0.36)",
+              color: "#2a1509",
+              fontSize: "16px",
+            }}
+          />
+
+          {authError && (
+            <p className="text-sm" style={{ color: "#f6d8af" }}>
+              {authError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full py-3 rounded-xl font-bold text-white"
+            style={{
+              background: "linear-gradient(135deg, #c96b1b, #e0b860)",
+              boxShadow: "0 12px 28px rgba(201,107,27,0.26)",
+              opacity: authLoading ? 0.7 : 1,
+            }}
+            disabled={authLoading}
+          >
+            {authLoading ? "Checking..." : "Login"}
+          </button>
+        </motion.form>
       </div>
     );
   }
 
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center p-3 sm:p-4 md:p-8"
+      className="min-h-screen w-full p-2 sm:p-4 md:p-6"
       style={{
         background: `
           radial-gradient(circle at 20% 20%, rgba(222,174,116,0.15), transparent 40%),
@@ -388,6 +603,58 @@ export default function DonorFormPage() {
         `,
       }}
     >
+      <div className="mx-auto w-full max-w-lg">
+        <div
+          ref={topRef}
+          className="sticky top-2 z-40 mb-3 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between"
+          style={{
+            background: "rgba(36,20,12,0.88)",
+            border: "1px solid rgba(170,120,75,0.24)",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <span
+            className="text-sm font-semibold truncate pr-2"
+            style={{ color: "rgba(255,230,198,0.9)" }}
+          >
+            {authUser?.username}
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {authUser?.role === "admin" && (
+              <a
+                href="/donor-form/admin"
+                onClick={() => {
+                  (document.activeElement as HTMLElement | null)?.blur();
+                  setLoginPassword("");
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{
+                  background: "rgba(255,246,233,0.1)",
+                  border: "1px solid rgba(228,180,121,0.2)",
+                  color: "#ffe9cc",
+                }}
+              >
+                Admin
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold"
+              style={{
+                background: "rgba(255,246,233,0.1)",
+                border: "1px solid rgba(228,180,121,0.2)",
+                color: "#ffe9cc",
+                opacity: authLoading ? 0.7 : 1,
+              }}
+              disabled={authLoading}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Success overlay */}
       <AnimatePresence>
         {showSuccess && (
@@ -566,6 +833,12 @@ export default function DonorFormPage() {
                 ))}
               </div>
 
+              {status && (
+                <p className="text-sm mb-3" style={{ color: "#f6d8af" }}>
+                  {status}
+                </p>
+              )}
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -726,6 +999,12 @@ export default function DonorFormPage() {
                 </div>
               )}
 
+              {status && (
+                <p className="text-sm mb-3" style={{ color: "#f6d8af" }}>
+                  {status}
+                </p>
+              )}
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -775,7 +1054,7 @@ export default function DonorFormPage() {
 
       {/* Form card */}
       <motion.div
-        className="w-full max-w-lg rounded-2xl overflow-hidden"
+        className="mx-auto w-full max-w-lg rounded-2xl overflow-hidden"
         style={{
           background:
             "linear-gradient(160deg, rgba(36,20,12,0.98), rgba(50,24,10,0.96) 46%, rgba(68,34,14,0.94))",
@@ -839,7 +1118,7 @@ export default function DonorFormPage() {
                 className="text-xs font-bold tracking-wider uppercase"
                 style={{ color: "rgba(255,230,198,0.85)" }}
               >
-                Name
+                Name <span style={{ color: "#f8c6c1" }}>*</span>
               </label>
               <input
                 value={name}
@@ -860,7 +1139,7 @@ export default function DonorFormPage() {
                 className="text-xs font-bold tracking-wider uppercase"
                 style={{ color: "rgba(255,230,198,0.85)" }}
               >
-                Qty
+                Qty <span style={{ color: "#f8c6c1" }}>*</span>
               </label>
               <input
                 type="text"
@@ -886,7 +1165,7 @@ export default function DonorFormPage() {
                 className="text-xs font-bold tracking-wider uppercase"
                 style={{ color: "rgba(255,230,198,0.85)" }}
               >
-                Country
+                Country Code <span style={{ color: "#f8c6c1" }}>*</span>
               </label>
               <select
                 value={phoneCode}
@@ -911,14 +1190,14 @@ export default function DonorFormPage() {
                 className="text-xs font-bold tracking-wider uppercase"
                 style={{ color: "rgba(255,230,198,0.85)" }}
               >
-                Phone
+                Mobile Number <span style={{ color: "#f8c6c1" }}>*</span>
               </label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 maxLength={20}
-                placeholder="Phone number"
+                placeholder="Mobile number"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoComplete="tel-national"
@@ -934,20 +1213,38 @@ export default function DonorFormPage() {
           </div>
 
           {/* Same as phone checkbox */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={sameAsPhone}
-              onChange={(e) => setSameAsPhone(e.target.checked)}
-              className="w-4 h-4 rounded"
-            />
+          <button
+            type="button"
+            className="w-full px-3 py-2.5 rounded-xl text-left text-sm font-bold flex items-center gap-3"
+            style={{
+              color: "#fff5e7",
+              background: sameAsPhone
+                ? "linear-gradient(135deg, rgba(201,107,27,0.28), rgba(224,184,96,0.24))"
+                : "rgba(255,246,233,0.08)",
+              border: `1px solid ${sameAsPhone ? "rgba(201,107,27,0.62)" : "rgba(228,180,121,0.22)"}`,
+              boxShadow: sameAsPhone
+                ? "0 10px 24px rgba(201,107,27,0.22)"
+                : "none",
+            }}
+            onClick={() => setSameAsPhone((prev) => !prev)}
+            aria-pressed={sameAsPhone}
+          >
             <span
-              className="text-xs font-semibold"
-              style={{ color: "#ffe9cc" }}
+              className="inline-flex items-center justify-center w-4 h-4 rounded-sm shrink-0"
+              style={{
+                background: sameAsPhone
+                  ? "rgba(201,107,27,0.88)"
+                  : "transparent",
+                border: `1px solid ${sameAsPhone ? "rgba(238,203,152,0.9)" : "rgba(228,180,121,0.55)"}`,
+                color: "#fff7eb",
+                fontSize: "12px",
+                lineHeight: 1,
+              }}
             >
-              WhatsApp same as phone
+              {sameAsPhone ? "✓" : ""}
             </span>
-          </label>
+            <span>WhatsApp Number same as Mobile Number</span>
+          </button>
 
           {/* WhatsApp */}
           {!sameAsPhone && (
@@ -961,7 +1258,7 @@ export default function DonorFormPage() {
                   className="text-xs font-bold tracking-wider uppercase"
                   style={{ color: "rgba(255,230,198,0.85)" }}
                 >
-                  Country
+                  Country Code <span style={{ color: "#f8c6c1" }}>*</span>
                 </label>
                 <select
                   value={whatsappCode}
@@ -986,14 +1283,14 @@ export default function DonorFormPage() {
                   className="text-xs font-bold tracking-wider uppercase"
                   style={{ color: "rgba(255,230,198,0.85)" }}
                 >
-                  WhatsApp
+                  WhatsApp Number <span style={{ color: "#f8c6c1" }}>*</span>
                 </label>
                 <input
                   type="tel"
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
                   maxLength={20}
-                  placeholder="WhatsApp number"
+                  placeholder="WhatsApp mobile number"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="tel-national"
@@ -1016,6 +1313,12 @@ export default function DonorFormPage() {
               style={{ color: "rgba(255,230,198,0.85)" }}
             >
               Email
+              <span
+                className="ml-1 normal-case italic font-medium"
+                style={{ color: "rgba(255,230,198,0.55)" }}
+              >
+                (optional)
+              </span>
             </label>
             <input
               type="email"
@@ -1040,6 +1343,12 @@ export default function DonorFormPage() {
               style={{ color: "rgba(255,230,198,0.85)" }}
             >
               Date of Birth
+              <span
+                className="ml-1 normal-case italic font-medium"
+                style={{ color: "rgba(255,230,198,0.55)" }}
+              >
+                (optional)
+              </span>
             </label>
             <input
               type="date"
@@ -1069,7 +1378,8 @@ export default function DonorFormPage() {
               className="text-xs font-bold tracking-wider uppercase"
               style={{ color: "rgba(255,230,198,0.85)" }}
             >
-              Block (auto-assigned or choose)
+              Block (auto-assigned or choose){" "}
+              <span style={{ color: "#f8c6c1" }}>*</span>
             </label>
             <select
               value={blockIdStr}
@@ -1138,6 +1448,7 @@ export default function DonorFormPage() {
               whileTap={{ scale: 0.98 }}
               disabled={submitting}
               onClick={() => {
+                setStatus("");
                 setDonationPaymentMethod("cash");
                 setDonationPaymentReference("");
                 setShowDonatePaymentModal(true);
@@ -1160,6 +1471,7 @@ export default function DonorFormPage() {
               whileTap={{ scale: 0.98 }}
               disabled={submitting}
               onClick={() => {
+                setStatus("");
                 setPledgeDays(null);
                 setShowPledgeModal(true);
               }}

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { NAMES_PER_BLOCK, COST_PER_NAME } from "@/lib/mosaic/engine";
 import { eventBus } from "@/lib/events/emitter";
 import { Prisma } from "@prisma/client";
+import { getCurrentUserFromRequest } from "@/lib/auth/donor-form";
 
 export async function POST(
   req: NextRequest,
@@ -17,7 +18,9 @@ export async function POST(
   const email = String(body.email ?? "").trim();
   const phone = String(body.phone ?? "").trim();
   const whatsapp = String(body.whatsapp ?? "").trim();
+  const paymentMethod = String(body.payment_method ?? "cash").toLowerCase();
   const receiptSerialInput = String(body.receipt_serial ?? "").trim();
+  const currentUser = await getCurrentUserFromRequest(req);
 
   if (!name)
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -68,6 +71,7 @@ export async function POST(
             email,
             phone,
             whatsapp,
+            collectedByUserId: currentUser?.id,
           },
           select: {
             id: true,
@@ -115,6 +119,17 @@ export async function POST(
   });
   const totalUsed = names.reduce((s, n) => s + n.qty, 0);
   const amount = qty * COST_PER_NAME;
+
+  if (currentUser) {
+    await prisma.donorFormUser.update({
+      where: { id: currentUser.id },
+      data: {
+        amountTotal: { increment: amount },
+        amountInCash:
+          paymentMethod === "cash" ? { increment: amount } : undefined,
+      },
+    });
+  }
 
   const serialNumber =
     submission.serialNumber ||
