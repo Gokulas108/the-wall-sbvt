@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const users = await prisma.donorFormUser.findMany({
+  const usersRaw = await prisma.donorFormUser.findMany({
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -25,8 +25,17 @@ export async function GET(req: NextRequest) {
       amountTotal: true,
       createdAt: true,
       updatedAt: true,
+      _count: {
+        select: { submissions: true },
+      },
     },
   });
+
+  const users = usersRaw.map(u => ({
+    ...u,
+    donorsApproached: u._count.submissions,
+    _count: undefined,
+  }));
 
   return NextResponse.json({ users });
 }

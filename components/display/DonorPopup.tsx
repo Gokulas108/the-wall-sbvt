@@ -66,7 +66,7 @@ export function DonorPopup({ donor, position }: Props) {
             animate={{ scale: 1 }}
             transition={{ delay: 0.3, type: "spring", stiffness: 400 }}
           >
-            🌸🪔🌸
+            🌸🪷🌸
           </motion.div>
 
           {/* Label */}

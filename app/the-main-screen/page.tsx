@@ -139,6 +139,7 @@ export default function TheMainScreen() {
   const { blocks, loading, fetchBlock } = useBlockData();
   const [wallReady, setWallReady] = useState(false);
   const [activePopups, setActivePopups] = useState<ActiveDonorPopup[]>([]);
+  const [popupQueue, setPopupQueue] = useState<DonorEvent[]>([]);
   const [highlightedBlock, setHighlightedBlock] = useState<string | null>(null);
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltip | null>(null);
   const [focusedBlock, setFocusedBlock] = useState<string | null>(null);
@@ -173,24 +174,39 @@ export default function TheMainScreen() {
   }, []);
 
   const randomPosition = useCallback((existing: ActiveDonorPopup[]) => {
-    const minTop = 22;
-    const maxTop = 60;
-    const minLeft = 16;
-    const maxLeft = 84;
+    const minTop = 20;
+    const maxTop = 75;
+    const minLeft = 20;
+    const maxLeft = 80;
 
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
       const top = minTop + Math.random() * (maxTop - minTop);
       const left = minLeft + Math.random() * (maxLeft - minLeft);
       const overlapping = existing.some((popup) => {
         const t = Number.parseFloat(popup.position.top);
         const l = Number.parseFloat(popup.position.left);
-        return Math.abs(t - top) < 12 && Math.abs(l - left) < 16;
+        return Math.abs(t - top) < 28 && Math.abs(l - left) < 30;
       });
       if (!overlapping) {
         return { top: `${top}%`, left: `${left}%` };
       }
     }
 
+    // Grid fallback if random fails to find empty spot
+    const gridCols = [20, 50, 80];
+    const gridRows = [25, 50, 75];
+    for (const t of gridRows) {
+      for (const l of gridCols) {
+        const overlapping = existing.some((popup) => {
+          const pt = Number.parseFloat(popup.position.top);
+          const pl = Number.parseFloat(popup.position.left);
+          return Math.abs(pt - t) < 15 && Math.abs(pl - l) < 20;
+        });
+        if (!overlapping) return { top: `${t}%`, left: `${l}%` };
+      }
+    }
+
+    // Ultimate fallback
     return {
       top: `${minTop + Math.random() * (maxTop - minTop)}%`,
       left: `${minLeft + Math.random() * (maxLeft - minLeft)}%`,
@@ -463,39 +479,7 @@ export default function TheMainScreen() {
           });
         }
 
-        const popupId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        setActivePopups((prev) => {
-          const position =
-            prev.length === 0
-              ? { top: "46%", left: "50%" }
-              : randomPosition(prev);
-
-          const next = [
-            ...prev,
-            {
-              id: popupId,
-              donor,
-              position,
-            },
-          ];
-
-          if (next.length > MAX_ACTIVE_POPUPS) {
-            const overflow = next.slice(0, next.length - MAX_ACTIVE_POPUPS);
-            overflow.forEach((popup) => {
-              const timer = popupTimersRef.current.get(popup.id);
-              if (timer) {
-                clearTimeout(timer);
-                popupTimersRef.current.delete(popup.id);
-              }
-            });
-            return next.slice(-MAX_ACTIVE_POPUPS);
-          }
-
-          return next;
-        });
-
-        const timer = setTimeout(() => removePopup(popupId), 5200);
-        popupTimersRef.current.set(popupId, timer);
+        setPopupQueue((prev) => [...prev, donor]);
 
         setHighlightedBlock(donor.blockId);
         if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
@@ -506,8 +490,28 @@ export default function TheMainScreen() {
         }, 2600);
       }
     },
-    [fetchBlock, randomPosition, removePopup],
+    [fetchBlock],
   );
+
+  useEffect(() => {
+    if (activePopups.length < MAX_ACTIVE_POPUPS && popupQueue.length > 0) {
+      const nextDonor = popupQueue[0];
+      const popupId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      setPopupQueue((prev) => prev.slice(1));
+
+      setActivePopups((prev) => {
+        const position =
+          prev.length === 0
+            ? { top: "46%", left: "50%" }
+            : randomPosition(prev);
+        return [...prev, { id: popupId, donor: nextDonor, position }];
+      });
+
+      const timer = setTimeout(() => removePopup(popupId), 12000);
+      popupTimersRef.current.set(popupId, timer);
+    }
+  }, [activePopups.length, popupQueue, randomPosition, removePopup]);
 
   useSSE("/api/events", handleSSEMessage, !isBooting);
 
@@ -776,6 +780,43 @@ export default function TheMainScreen() {
         <DonorMarquee blocks={blocks} />
       </motion.div>
 
+      <AnimatePresence>
+        {popupQueue.length > 0 && (
+          <motion.div
+            className="fixed bottom-[80px] right-6 z-50 p-4 rounded-xl flex flex-col pointer-events-none"
+            style={{
+              background: "linear-gradient(145deg, rgba(35,18,10,0.95), rgba(53,27,13,0.92) 52%, rgba(67,34,15,0.9))",
+              border: "1px solid rgba(228,180,121,0.4)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+              minWidth: "220px",
+            }}
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+          >
+            <h3 className="text-sm font-bold tracking-wider uppercase mb-2 flex items-center justify-between" style={{ color: "#c96b1b", fontFamily: '"Playfair Display", serif' }}>
+              <span>Upcoming Names</span>
+              <span className="text-xs px-2 py-0.5 rounded-full font-sans" style={{ background: "rgba(201,107,27,0.2)", color: "#fff5e7" }}>
+                {popupQueue.length}
+              </span>
+            </h3>
+            <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {popupQueue.slice(0, 10).map((qDonor, idx) => (
+                <div key={idx} className="text-sm truncate" style={{ color: "#fff5e7" }}>
+                  <span className="opacity-70 mr-2 text-xs">{idx + 1}.</span>
+                  {qDonor.name}
+                </div>
+              ))}
+              {popupQueue.length > 10 && (
+                <div className="text-xs italic opacity-60 mt-1 text-center" style={{ color: "#fff5e7" }}>
+                  + {popupQueue.length - 10} more
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Donor popup overlay */}
       <AnimatePresence>
         {activePopups.map((popup) => (
@@ -1023,7 +1064,7 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
       }}
     >
       <span className="mr-3 text-base" style={{ color: "#c96b1b" }}>
-        🪔
+        🪷
       </span>
       {name}
     </span>

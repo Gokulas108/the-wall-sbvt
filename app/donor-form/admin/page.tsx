@@ -16,6 +16,7 @@ type ManagedUser = {
   amountInCash: number;
   amountPledge: number;
   amountTotal: number;
+  donorsApproached: number;
 };
 
 export default function DonorFormAdminPage() {
@@ -636,7 +637,20 @@ export default function DonorFormAdminPage() {
                           ₹{currencyFormatter.format(user.amountTotal)}
                         </span>
                       </td>
-                      <td />
+                      <td style={{ fontWeight: 700 }}>
+                        <span
+                          className="text-[11px]"
+                          style={{
+                            display: "block",
+                            color: "rgba(255,230,198,0.72)",
+                          }}
+                        >
+                          Donors Approached
+                        </span>
+                        <span>
+                          {user.donorsApproached ?? 0}
+                        </span>
+                      </td>
                     </tr>
                     <tr>
                       <td
