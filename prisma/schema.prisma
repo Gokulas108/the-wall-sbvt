@@ -35,6 +35,8 @@ model BlockSubmission {
   whatsapp      String
   collectedByUserId Int? @map("collected_by_user_id")
   pledgeDueDays Int?     @map("pledge_due_days")
+  paymentMethod String?  @map("payment_method")
+  paymentReference String? @map("payment_reference")
   createdAt     DateTime @default(now()) @map("created_at")
   collectedByUser DonorFormUser? @relation(fields: [collectedByUserId], references: [id])
 
@@ -44,18 +46,21 @@ model BlockSubmission {
 }
 
 model DonorFormUser {
-  id           Int            @id @default(autoincrement())
-  username     String         @unique
-  password     String
-  role         DonorFormRole
-  isActive     Boolean        @default(true) @map("is_active")
-  amountInCash Int            @default(0) @map("amount_in_cash")
-  amountPledge Int            @default(0) @map("amount_pledge")
-  amountTotal  Int            @default(0) @map("amount_total")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  sessions     DonorFormSession[]
-  submissions  BlockSubmission[]
+  id             Int            @id @default(autoincrement())
+  username       String         @unique
+  password       String
+  role           DonorFormRole
+  isActive       Boolean        @default(true) @map("is_active")
+  amountInCash   Int            @default(0) @map("amount_in_cash")
+  amountPledge   Int            @default(0) @map("amount_pledge")
+  amountTotal    Int            @default(0) @map("amount_total")
+  amountSettled  Int            @default(0) @map("amount_settled")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  sessions       DonorFormSession[]
+  submissions    BlockSubmission[]
+  settlementsReceived CashSettlement[] @relation("SettlementVolunteer")
+  settlementsPerformed CashSettlement[] @relation("SettlementAdmin")
 
   @@map("donor_form_users")
 }
@@ -71,4 +76,19 @@ model DonorFormSession {
   @@index([userId])
   @@index([expiresAt])
   @@map("donor_form_sessions")
+}
+
+model CashSettlement {
+  id            Int      @id @default(autoincrement())
+  volunteerId   Int      @map("volunteer_id")
+  adminId       Int      @map("admin_id")
+  amount        Int
+  note          String?  @default("")
+  createdAt     DateTime @default(now()) @map("created_at")
+  volunteer     DonorFormUser @relation("SettlementVolunteer", fields: [volunteerId], references: [id])
+  admin         DonorFormUser @relation("SettlementAdmin", fields: [adminId], references: [id])
+
+  @@index([volunteerId])
+  @@index([adminId])
+  @@map("cash_settlements")
 }

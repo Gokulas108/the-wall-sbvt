@@ -185,7 +185,7 @@ export default function TheMainScreen() {
       const overlapping = existing.some((popup) => {
         const t = Number.parseFloat(popup.position.top);
         const l = Number.parseFloat(popup.position.left);
-        return Math.abs(t - top) < 28 && Math.abs(l - left) < 30;
+        return Math.abs(t - top) < 35 && Math.abs(l - left) < 30;
       });
       if (!overlapping) {
         return { top: `${top}%`, left: `${left}%` };
@@ -194,13 +194,13 @@ export default function TheMainScreen() {
 
     // Grid fallback if random fails to find empty spot
     const gridCols = [20, 50, 80];
-    const gridRows = [25, 50, 75];
+    const gridRows = [25, 75];
     for (const t of gridRows) {
       for (const l of gridCols) {
         const overlapping = existing.some((popup) => {
           const pt = Number.parseFloat(popup.position.top);
           const pl = Number.parseFloat(popup.position.left);
-          return Math.abs(pt - t) < 15 && Math.abs(pl - l) < 20;
+          return Math.abs(pt - t) < 30 && Math.abs(pl - l) < 20;
         });
         if (!overlapping) return { top: `${t}%`, left: `${l}%` };
       }
@@ -783,7 +783,7 @@ export default function TheMainScreen() {
       <AnimatePresence>
         {popupQueue.length > 0 && (
           <motion.div
-            className="fixed bottom-[80px] right-6 z-50 p-4 rounded-xl flex flex-col pointer-events-none"
+            className="fixed bottom-[80px] right-6 z-[99] p-4 rounded-xl flex flex-col pointer-events-none"
             style={{
               background: "linear-gradient(145deg, rgba(35,18,10,0.95), rgba(53,27,13,0.92) 52%, rgba(67,34,15,0.9))",
               border: "1px solid rgba(228,180,121,0.4)",

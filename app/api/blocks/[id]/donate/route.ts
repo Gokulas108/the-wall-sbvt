@@ -19,6 +19,7 @@ export async function POST(
   const phone = String(body.phone ?? "").trim();
   const whatsapp = String(body.whatsapp ?? "").trim();
   const paymentMethod = String(body.payment_method ?? "cash").toLowerCase();
+  const paymentReference = String(body.payment_reference ?? "").trim();
   const receiptSerialInput = String(body.receipt_serial ?? "").trim();
   const currentUser = await getCurrentUserFromRequest(req);
 
@@ -72,6 +73,8 @@ export async function POST(
             phone,
             whatsapp,
             collectedByUserId: currentUser?.id,
+            paymentMethod,
+            paymentReference: paymentMethod === "upi" ? paymentReference : null,
           },
           select: {
             id: true,

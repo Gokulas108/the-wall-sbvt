@@ -524,7 +524,7 @@ export default function DonorFormPage() {
             className="text-2xl font-black"
             style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#fff6ea" }}
           >
-            Donor Form Login
+            Volunteer Form Login
           </h1>
           <p className="text-sm" style={{ color: "rgba(244,224,197,0.75)" }}>
             Enter username and 4-digit PIN.
@@ -620,6 +620,23 @@ export default function DonorFormPage() {
             {authUser?.username}
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            {authUser && (
+              <a
+                href={`/donor-form/stats/${authUser.id}`}
+                onClick={() => {
+                  (document.activeElement as HTMLElement | null)?.blur();
+                  setLoginPassword("");
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{
+                  background: "rgba(255,246,233,0.1)",
+                  border: "1px solid rgba(228,180,121,0.2)",
+                  color: "#ffe9cc",
+                }}
+              >
+                Info
+              </a>
+            )}
             {authUser?.role === "admin" && (
               <a
                 href="/donor-form/admin"

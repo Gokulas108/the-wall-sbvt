@@ -16,6 +16,7 @@ type ManagedUser = {
   amountInCash: number;
   amountPledge: number;
   amountTotal: number;
+  amountSettled: number;
   donorsApproached: number;
 };
 
@@ -51,6 +52,10 @@ export default function DonorFormAdminPage() {
   );
   const totalPledge = useMemo(
     () => users.reduce((sum, user) => sum + user.amountPledge, 0),
+    [users],
+  );
+  const totalSettlementPending = useMemo(
+    () => users.reduce((sum, user) => sum + Math.max(0, (user.amountInCash ?? 0) - (user.amountSettled ?? 0)), 0),
     [users],
   );
   const currencyFormatter = useMemo(() => new Intl.NumberFormat("en-IN"), []);
@@ -270,7 +275,7 @@ export default function DonorFormAdminPage() {
               color: "#ffe9cc",
             }}
           >
-            Go to donor form
+            Go to form
           </a>
         </div>
       </div>
@@ -304,7 +309,7 @@ export default function DonorFormAdminPage() {
               className="text-[11px] uppercase tracking-wider"
               style={{ color: "rgba(255,230,198,0.72)" }}
             >
-              Donor Admin
+              Admin
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -359,9 +364,9 @@ export default function DonorFormAdminPage() {
             className="text-xl font-black mb-1"
             style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#fff6ea" }}
           >
-            Donor Form Admin
+            Admin
           </h1>
-          <div className="grid grid-cols-3 gap-2 mt-3">
+          <div className="grid grid-cols-2 gap-2 mt-3">
             <div
               className="rounded-xl p-2"
               style={{
@@ -373,7 +378,7 @@ export default function DonorFormAdminPage() {
                 className="text-[10px] uppercase tracking-wider"
                 style={{ color: "rgba(255,230,198,0.72)" }}
               >
-                Total
+                Total Collected
               </p>
               <p className="text-xs font-bold" style={{ color: "#fff5e7" }}>
                 ₹{currencyFormatter.format(totalCollected)}
@@ -390,7 +395,7 @@ export default function DonorFormAdminPage() {
                 className="text-[10px] uppercase tracking-wider"
                 style={{ color: "rgba(255,230,198,0.72)" }}
               >
-                Cash
+                Cash Collected
               </p>
               <p className="text-xs font-bold" style={{ color: "#fff5e7" }}>
                 ₹{currencyFormatter.format(totalCash)}
@@ -411,6 +416,24 @@ export default function DonorFormAdminPage() {
               </p>
               <p className="text-xs font-bold" style={{ color: "#fff5e7" }}>
                 ₹{currencyFormatter.format(totalPledge)}
+              </p>
+            </div>
+            <div
+              className="rounded-xl p-2"
+              style={{
+                background: totalSettlementPending > 0 ? "rgba(240,80,60,0.15)" : "rgba(80,180,100,0.15)",
+                border: "1px solid",
+                borderColor: totalSettlementPending > 0 ? "rgba(240,80,60,0.3)" : "rgba(80,180,100,0.3)",
+              }}
+            >
+              <p
+                className="text-[10px] uppercase tracking-wider"
+                style={{ color: totalSettlementPending > 0 ? "rgba(248,198,193,0.8)" : "rgba(207,243,216,0.8)" }}
+              >
+                Settlement Pending
+              </p>
+              <p className="text-xs font-bold" style={{ color: totalSettlementPending > 0 ? "#f8c6c1" : "#cff3d8" }}>
+                ₹{currencyFormatter.format(totalSettlementPending)}
               </p>
             </div>
           </div>
@@ -549,9 +572,13 @@ export default function DonorFormAdminPage() {
               }}
             >
               <div className="flex items-center justify-between">
-                <p className="text-sm font-bold" style={{ color: "#fff5e7" }}>
+                <a
+                  href={`/donor-form/stats/${user.id}`}
+                  className="text-sm font-bold hover:underline"
+                  style={{ color: "#fff5e7", textDecorationColor: "rgba(228,180,121,0.5)" }}
+                >
                   {user.username}
-                </p>
+                </a>
                 <div className="flex items-center gap-1.5">
                   <span
                     className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider"
@@ -576,101 +603,7 @@ export default function DonorFormAdminPage() {
                 </div>
               </div>
 
-              <div
-                className="text-xs"
-                style={{ color: "rgba(255,230,198,0.84)" }}
-              >
-                <table
-                  className="w-full"
-                  style={{ borderCollapse: "separate", borderSpacing: "6px" }}
-                >
-                  <thead>
-                    <tr>
-                      <th
-                        className="text-[11px] text-left"
-                        style={{ color: "rgba(255,230,198,0.72)" }}
-                      >
-                        Donation
-                      </th>
-                      <th
-                        className="text-[11px] text-left"
-                        style={{ color: "rgba(255,230,198,0.72)" }}
-                      >
-                        Pledge
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td style={{ fontWeight: 700 }}>
-                        <span
-                          className="text-[11px]"
-                          style={{
-                            display: "block",
-                            color: "rgba(255,230,198,0.72)",
-                          }}
-                        >
-                          Cash
-                        </span>
-                        <span>
-                          ₹{currencyFormatter.format(user.amountInCash)}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 700 }}>
-                        <span>
-                          ₹{currencyFormatter.format(user.amountPledge)}
-                        </span>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 700 }}>
-                        <span
-                          className="text-[11px]"
-                          style={{
-                            display: "block",
-                            color: "rgba(255,230,198,0.72)",
-                          }}
-                        >
-                          Total
-                        </span>
-                        <span>
-                          ₹{currencyFormatter.format(user.amountTotal)}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 700 }}>
-                        <span
-                          className="text-[11px]"
-                          style={{
-                            display: "block",
-                            color: "rgba(255,230,198,0.72)",
-                          }}
-                        >
-                          Donors Approached
-                        </span>
-                        <span>
-                          {user.donorsApproached ?? 0}
-                        </span>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        colSpan={2}
-                        style={{
-                          paddingTop: 6,
-                          borderTop: "1px dashed rgba(228,180,121,0.12)",
-                          color: "#fff5e7",
-                          fontWeight: 800,
-                        }}
-                      >
-                        Grand total (Donation + Pledge): ₹
-                        {currencyFormatter.format(
-                          user.amountTotal + user.amountPledge,
-                        )}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+
 
               <div className="flex gap-2">
                 <select
@@ -748,20 +681,43 @@ export default function DonorFormAdminPage() {
                 </p>
               )}
 
-              <button
-                type="button"
-                className="w-full py-2 rounded-lg text-xs font-bold"
-                style={{
-                  background: "rgba(255,246,233,0.1)",
-                  border: "1px solid rgba(228,180,121,0.2)",
-                  color: "#ffe9cc",
-                }}
-                onClick={() =>
-                  void patchUser(user.id, { isActive: !user.isActive })
-                }
-              >
-                {user.isActive ? "Deactivate User" : "Activate User"}
-              </button>
+              <div className="flex gap-2">
+                <a
+                  href={`/donor-form/stats/${user.id}`}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold text-center"
+                  style={{
+                    background: "rgba(255,246,233,0.1)",
+                    border: "1px solid rgba(228,180,121,0.2)",
+                    color: "#ffe9cc",
+                  }}
+                >
+                  Info
+                </a>
+                <button
+                  type="button"
+                  className="flex-1 py-2 rounded-lg text-xs font-bold"
+                  style={{
+                    background: user.isActive ? "rgba(240,80,60,0.15)" : "rgba(80,180,100,0.15)",
+                    border: "1px solid",
+                    borderColor: user.isActive ? "rgba(240,80,60,0.3)" : "rgba(80,180,100,0.3)",
+                    color: user.isActive ? "#f8c6c1" : "#cff3d8",
+                  }}
+                  onClick={() =>
+                    void patchUser(user.id, { isActive: !user.isActive })
+                  }
+                >
+                  {user.isActive ? "Deactivate" : "Activate"}
+                </button>
+              </div>
+
+              {(user.amountInCash ?? 0) - (user.amountSettled ?? 0) > 0 && (
+                <div
+                  className="mt-1 px-3 py-2 rounded-lg text-[11px] font-semibold text-center"
+                  style={{ background: "rgba(248,198,193,0.1)", color: "#f8c6c1", border: "1px solid rgba(248,198,193,0.2)" }}
+                >
+                  Pending Settlement: ₹{currencyFormatter.format((user.amountInCash ?? 0) - (user.amountSettled ?? 0))}
+                </div>
+              )}
             </div>
           ))}
         </div>

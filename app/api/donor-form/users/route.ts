@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
       amountInCash: true,
       amountPledge: true,
       amountTotal: true,
+      amountSettled: true,
       createdAt: true,
       updatedAt: true,
       _count: {
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
         amountInCash: true,
         amountPledge: true,
         amountTotal: true,
+        amountSettled: true,
         createdAt: true,
         updatedAt: true,
       },
