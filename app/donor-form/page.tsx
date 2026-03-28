@@ -15,23 +15,7 @@ import {
   GRID_SIZE,
   blockId as bid,
 } from "@/lib/mosaic/engine";
-
-const COUNTRY_CODES = [
-  ["India", "+91"],
-  ["United States", "+1"],
-  ["United Kingdom", "+44"],
-  ["Australia", "+61"],
-  ["Canada", "+1"],
-  ["Germany", "+49"],
-  ["France", "+33"],
-  ["Singapore", "+65"],
-  ["UAE", "+971"],
-  ["Bangladesh", "+880"],
-  ["Nepal", "+977"],
-  ["Sri Lanka", "+94"],
-  ["Malaysia", "+60"],
-  ["South Africa", "+27"],
-];
+import { COUNTRY_CODES } from "./countries";
 
 type BlockCapacity = { id: string; remaining: number };
 type DonationPaymentMethod = "cash" | "upi";
@@ -395,14 +379,46 @@ export default function DonorFormPage() {
       setStatus("Please enter your phone number.");
       return;
     }
+    const phCountry = COUNTRY_CODES.find((c) => c.code === phoneCode);
+    if (phCountry) {
+      const digits = phone.replace(/\D/g, "").length;
+      if (digits < phCountry.min || digits > phCountry.max) {
+        setStatus(
+          `Mobile number must be ${
+            phCountry.min === phCountry.max
+              ? phCountry.min
+              : `${phCountry.min}-${phCountry.max}`
+          } digits for ${phCountry.name}.`
+        );
+        return;
+      }
+    }
+
     if (!sameAsPhone && !whatsappCode.trim()) {
       setStatus("Please select a WhatsApp country code.");
       return;
     }
     const whatsappVal = sameAsPhone ? phone : whatsapp;
+    const waCodeVal = sameAsPhone ? phoneCode : whatsappCode;
     if (!whatsappVal.trim()) {
       setStatus("Please enter your WhatsApp number.");
       return;
+    }
+    if (!sameAsPhone) {
+      const waCountry = COUNTRY_CODES.find((c) => c.code === waCodeVal);
+      if (waCountry) {
+        const digits = whatsappVal.replace(/\D/g, "").length;
+        if (digits < waCountry.min || digits > waCountry.max) {
+          setStatus(
+            `WhatsApp number must be ${
+              waCountry.min === waCountry.max
+                ? waCountry.min
+                : `${waCountry.min}-${waCountry.max}`
+            } digits for ${waCountry.name}.`
+          );
+          return;
+        }
+      }
     }
     if (!blockIdStr) {
       setStatus("Please select a block.");
@@ -830,7 +846,7 @@ export default function DonorFormPage() {
               </p>
 
               <div className="grid grid-cols-3 gap-2 mb-4">
-                {[25, 35, 45].map((d) => (
+                {[7, 15, 30].map((d) => (
                   <button
                     key={d}
                     type="button"
@@ -1195,9 +1211,9 @@ export default function DonorFormPage() {
                   fontSize: "16px",
                 }}
               >
-                {COUNTRY_CODES.map(([country, code]) => (
-                  <option key={`${country}-${code}`} value={code}>
-                    {country} ({code})
+                {COUNTRY_CODES.map((c) => (
+                  <option key={`${c.name}-${c.code}`} value={c.code}>
+                    {c.name} ({c.code})
                   </option>
                 ))}
               </select>
@@ -1288,9 +1304,9 @@ export default function DonorFormPage() {
                     fontSize: "16px",
                   }}
                 >
-                  {COUNTRY_CODES.map(([country, code]) => (
-                    <option key={`w-${country}-${code}`} value={code}>
-                      {country} ({code})
+                  {COUNTRY_CODES.map((c) => (
+                    <option key={`w-${c.name}-${c.code}`} value={c.code}>
+                      {c.name} ({c.code})
                     </option>
                   ))}
                 </select>

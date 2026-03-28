@@ -26,9 +26,9 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   if (!qty || qty < 1)
     return NextResponse.json({ error: "qty must be ≥ 1" }, { status: 400 });
-  if (![25, 35, 45].includes(pledgeDueDays)) {
+  if (![7, 15, 30].includes(pledgeDueDays)) {
     return NextResponse.json(
-      { error: "pledge_due_days must be 25, 35, or 45" },
+      { error: "pledge_due_days must be 7, 15, or 30" },
       { status: 400 },
     );
   }
