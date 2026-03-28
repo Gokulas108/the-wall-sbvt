@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wall of Legacy Mockup</title>
+  
+  <!-- Fonts mimicking the Next.js app -->
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Dancing+Script:wght@600&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-gradient: radial-gradient(circle at top left, rgba(201,107,27,0.08), transparent 26%),
+                     radial-gradient(circle at 85% 18%, rgba(215,173,87,0.1), transparent 24%),
+                     linear-gradient(135deg, rgba(255,255,255,0.4), rgba(255,248,237,0.08)),
+                     #f2ece2;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      background: var(--bg-gradient);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Top Bar */
+    .top-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      z-index: 10;
+    }
+
+    .title-area p {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: rgba(59,33,14,0.9);
+      font-family: 'Dancing Script', cursive;
+    }
+
+    .title-area h1 {
+      margin: 0;
+      font-size: 1.875rem;
+      font-weight: 900;
+      font-family: 'Cinzel', Georgia, serif;
+      color: #2d1c0e;
+      line-height: 1;
+      text-shadow: 0 6px 24px rgba(255,255,255,0.45);
+    }
+
+    .subtitle-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .subtitle-line {
+      width: 28px;
+      height: 1px;
+      background: rgba(201,107,27,0.75);
+    }
+
+    .subtitle-text {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(73,47,26,0.88);
+    }
+
+    .stats-area {
+      display: flex;
+      gap: 24px;
+      text-align: right;
+    }
+
+    .stat-block p:first-child {
+      margin: 0;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #8d785f;
+    }
+
+    .stat-block p:last-child {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #c96b1b, #d7ad57);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* The Main Frame / Photo Area */
+    .frame-container {
+      position: relative;
+      width: min(82vh, 70vw);
+      height: min(82vh, 70vw);
+      background: #faf6f0;
+      border: 12px solid #5a3314; /* Mocking a wooden frame */
+      border-radius: 4px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4), inset 0 0 40px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Inner gold trim for the frame */
+    .frame-inner-trim {
+      position: absolute;
+      inset: 0;
+      border: 4px solid #d7ad57;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Dummy photo / mosaic background */
+    .photo-area {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url('./sbvt.jpg');
+      background-size: cover;
+      background-position: center;
+      filter: grayscale(100%);
+      z-index: 1;
+    }
+
+    /* Colored Highlight Block */
+    .highlight-block {
+      position: absolute;
+      width: 10%;
+      height: 10%;
+      top: 10%; /* Row 2 */
+      left: 70%; /* Col H */
+      background-image: url('./sbvt.jpg');
+      background-size: 1000% 1000%;
+      background-position: 77.777% 11.111%;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 1.5s ease-out, box-shadow 1.5s ease-out, top 1.5s cubic-bezier(0.22, 1, 0.36, 1), left 1.5s cubic-bezier(0.22, 1, 0.36, 1), width 1.5s cubic-bezier(0.22, 1, 0.36, 1), height 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .highlight-block.show {
+      opacity: 1;
+      box-shadow: 0 0 20px 4px rgba(233,186,119,0.8), inset 0 0 8px rgba(255,255,255,0.4);
+    }
+    .highlight-block.zoomed {
+      top: 0% !important;
+      left: 0% !important;
+      width: 100% !important;
+      height: 100% !important;
+      z-index: 20;
+      box-shadow: none;
+      border-radius: 4px;
+    }
+
+    /* Names Grid Overlay */
+    .names-grid {
+      position: absolute;
+      inset: 0;
+      background: rgba(26, 15, 8, 0.96); /* Dims the full block */
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 1.5s ease-in;
+    }
+    .names-grid.show-names {
+      opacity: 1;
+    }
+    .default-names-bg {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      color: rgba(255, 230, 198, 0.12); /* Faint */
+      font-family: 'Cinzel', serif;
+      font-size: 0.75rem;
+      line-height: 1.2;
+      text-transform: uppercase;
+      text-align: left;
+      word-break: break-all;
+    }
+    .target-name {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      font-size: 3rem;
+      font-family: 'Cinzel', serif;
+      font-weight: 900;
+      white-space: nowrap;
+      
+      background-image: url('./sbvt.jpg');
+      background-size: 1000% 1000%;
+      background-position: 77.777% 11.111%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      
+      transform: translate(-50%, -50%) scale(1.3);
+      text-shadow: 0 0 40px rgba(255,255,255,0.25);
+    }
+
+    /* Bottom Marquee Area */
+    .bottom-marquee {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 45px;
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(61,45,19,0.08);
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.03);
+      display: flex;
+      align-items: center;
+    }
+
+    /* Form helper text */
+    .instruction {
+      position: absolute;
+      bottom: 60px;
+      color: #8d785f;
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+
+    /* The Popup Overlay */
+    .popup-container {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.85);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 50;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .popup-container.show {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .popup-glow {
+      position: absolute;
+      top: -8px; left: -8px; right: -8px; bottom: -8px;
+      border-radius: 24px;
+      background: radial-gradient(ellipse, rgba(255,196,132,0.52), transparent 72%);
+      opacity: 0.6;
+      filter: blur(20px);
+      z-index: -1;
+    }
+
+    .popup-card {
+      position: relative;
+      padding: 2.25rem 3rem;
+      border-radius: 1rem;
+      background: linear-gradient(160deg, rgba(255,249,241,0.97), rgba(255,241,222,0.95) 46%, rgba(255,232,205,0.94));
+      border: 1px solid rgba(221,168,96,0.5);
+      box-shadow: 0 26px 64px rgba(96,58,27,0.26), 0 0 0 1px rgba(255,255,255,0.56), inset 0 1px 0 rgba(255,255,255,0.7);
+      backdrop-filter: blur(24px);
+      min-width: 380px;
+    }
+
+    .popup-top-line {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 6rem;
+      height: 2px;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, transparent, rgba(214,151,67,0.82), transparent);
+    }
+
+    .popup-floral-top {
+      text-align: center;
+      font-size: 1.875rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .popup-label {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(165,103,35,0.85);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .popup-heading {
+      text-align: center;
+      font-size: 1.875rem;
+      font-weight: 900;
+      font-family: 'Cinzel', Georgia, serif;
+      color: #8b4e14;
+      text-shadow: 0 2px 12px rgba(255,255,255,0.62);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .popup-subheading {
+      text-align: center;
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #7c4b1d;
+      margin: 0 0 0.75rem 0;
+    }
+
+    .popup-donor-name {
+      text-align: center;
+      font-size: 1.875rem;
+      font-weight: 700;
+      font-family: 'Cinzel', Georgia, serif;
+      color: #3c240f;
+      text-shadow: 0 3px 14px rgba(255,255,255,0.55);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .popup-block-info {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      font-size: 1rem;
+    }
+
+    .popup-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      background: rgba(233,186,119,0.18);
+      border: 1px solid rgba(201,136,64,0.4);
+      color: #5a3314;
+    }
+
+    .popup-details {
+      color: rgba(92,56,27,0.9);
+    }
+
+    .popup-floral-bottom {
+      text-align: center;
+      font-size: 1.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .popup-bottom-line {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4rem;
+      height: 1px;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, transparent, rgba(201,136,64,0.55), transparent);
+    }
+    /* Grid Labels */
+    .grid-col-labels {
+      position: absolute;
+      top: -1.75rem; left: 0; right: 0;
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+    }
+    .grid-row-labels {
+      position: absolute;
+      left: -1.75rem; top: 0; bottom: 0;
+      display: grid;
+      grid-template-rows: repeat(10, 1fr);
+    }
+    .grid-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: bold;
+      letter-spacing: 0.05em;
+      color: rgba(66,44,25,0.8);
+    }
+
+    /* Form Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(14,7,4,0.7);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .modal-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-content {
+      background: linear-gradient(145deg, #2a150b, #3c1f0f 52%, #4a2610);
+      border: 1px solid rgba(228,180,121,0.35);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.46);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+      color: #fff5e7;
+    }
+    .modal-content h3 {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #e0b860;
+      margin: 0 0 24px 0;
+      text-align: center;
+      font-family: 'Cinzel', Georgia, serif;
+      text-shadow: 0 2px 10px rgba(255,255,255,0.15);
+    }
+    .modal-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .modal-field label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: rgba(255,230,198,0.7);
+    }
+    .modal-field input {
+      background: rgba(255,250,244,0.06);
+      border: 1px solid rgba(222,182,131,0.3);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fff5e7;
+      font-size: 1rem;
+      outline: none;
+    }
+    .modal-field input:focus {
+      border-color: rgba(228,180,121,0.8);
+    }
+    .modal-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0,0,0,0.2);
+      border: 1px dashed rgba(228,180,121,0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 24px;
+      margin-bottom: 24px;
+    }
+    .modal-total .label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255,230,198,0.7);
+      font-weight: bold;
+    }
+    .modal-total .amount {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #e0b860;
+    }
+    .modal-btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: none;
+      background: linear-gradient(135deg, #c96b1b, #e0b860);
+      color: #fff;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="title-area">
+      <p>Srila Bhaktivinoda Thakur's</p>
+      <h1>Wall of Legacy</h1>
+      <div class="subtitle-area">
+        <div class="subtitle-line"></div>
+        <span class="subtitle-text">Living Legacy Seva</span>
+      </div>
+    </div>
+    <div class="stats-area">
+      <div class="stat-block">
+        <p>Names Inscribed</p>
+        <p id="topTotalNames">0</p>
+      </div>
+      <div class="stat-block">
+        <p>Amount Raised</p>
+        <p id="topTotalAmount">₹0</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Instruction Text -->
+  <div class="instruction"></div>
+
+  <!-- Main Picture Frame -->
+  <div class="frame-container">
+    <div class="grid-col-labels">
+      <div class="grid-label">A</div><div class="grid-label">B</div><div class="grid-label">C</div><div class="grid-label">D</div><div class="grid-label">E</div><div class="grid-label">F</div><div class="grid-label">G</div><div class="grid-label">H</div><div class="grid-label">I</div><div class="grid-label">J</div>
+    </div>
+    <div class="grid-row-labels">
+      <div class="grid-label">1</div><div class="grid-label">2</div><div class="grid-label">3</div><div class="grid-label">4</div><div class="grid-label">5</div><div class="grid-label">6</div><div class="grid-label">7</div><div class="grid-label">8</div><div class="grid-label">9</div><div class="grid-label">10</div>
+    </div>
+    <div class="frame-inner-trim"></div>
+    <div class="photo-area"></div>
+    <div class="highlight-block" id="coloredBlock">
+      <div class="names-grid" id="namesGrid"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Marquee (Dummy) -->
+  <div class="bottom-marquee"></div>
+
+  <!-- Popup -->
+  <div class="popup-container" id="thankYouPopup">
+    <div class="popup-glow"></div>
+    <div class="popup-card">
+      <div class="popup-top-line"></div>
+      <div class="popup-floral-top">🌸🪷🌸</div>
+      <p class="popup-label">New Offering</p>
+      <h3 class="popup-heading">Thank You!</h3>
+      <p class="popup-subheading">for your contribution seva</p>
+      <h2 class="popup-donor-name">H.H. Jayapataka Swami</h2>
+      
+      <div class="popup-block-info">
+        <span class="popup-badge">Block AH2</span>
+        <span class="popup-details">1 name · ₹2,500</span>
+      </div>
+
+      <div class="popup-floral-bottom">🌼 🌺 🌼</div>
+      <div class="popup-bottom-line"></div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="donationModal">
+    <div class="modal-content">
+      <h3>Inscribe your name on the wall</h3>
+      <div class="modal-field">
+        <label>Name</label>
+        <input type="text" id="modalName" value="H.H. Jayapataka Swami">
+      </div>
+      <div class="modal-field">
+        <label>Number of names to be inscribed</label>
+        <input type="number" id="modalQty" value="1" min="1">
+      </div>
+      <div class="modal-total">
+        <span class="label">Total Amount</span>
+        <span class="amount">₹<span id="modalTotalAmt">1,000</span></span>
+      </div>
+      <button class="modal-btn" id="modalDonateBtn">Donate</button>
+    </div>
+  </div>
+
+  <!-- Script for Interaction -->
+  <script>
+    let appState = "idle"; // idle -> modal -> popup
+
+    const modal = document.getElementById('donationModal');
+    const popup = document.getElementById('thankYouPopup');
+    const modalName = document.getElementById('modalName');
+    const modalQty = document.getElementById('modalQty');
+    const modalTotalAmt = document.getElementById('modalTotalAmt');
+    const coloredBlock = document.getElementById('coloredBlock');
+    const namesGrid = document.getElementById('namesGrid');
+    const modalDonateBtn = document.getElementById('modalDonateBtn');
+
+    const formatCurrency = (val) => new Intl.NumberFormat('en-IN').format(val);
+
+    modalQty.addEventListener('input', () => {
+      const qty = parseInt(modalQty.value) || 0;
+      modalTotalAmt.innerText = formatCurrency(qty * 1000);
+    });
+
+    const triggerPopup = () => {
+      const name = modalName.value || "Anonymous";
+      const qty = parseInt(modalQty.value) || 1;
+      const amt = qty * 1000;
+
+      // Populate dummy names natively packed around the absolute target name
+      let dummyText = '';
+      for(let i = 0; i < 800; i++) {
+        dummyText += 'ANONYMOUS DONOR';
+      }
+      
+      namesGrid.innerHTML = `
+        <div class="default-names-bg">${dummyText}</div>
+        <div class="target-name">${name}</div>
+      `;
+
+      document.querySelector('.popup-donor-name').innerText = name;
+      document.querySelector('.popup-details').innerText = `${qty} name${qty > 1 ? 's' : ''} · ₹${formatCurrency(amt)}`;
+
+      document.getElementById('topTotalNames').innerText = formatCurrency(qty);
+      document.getElementById('topTotalAmount').innerText = `₹${formatCurrency(amt)}`;
+
+      modal.classList.remove('show');
+
+      popup.classList.remove('show');
+      coloredBlock.classList.remove('show');
+      coloredBlock.classList.remove('zoomed');
+      namesGrid.classList.remove('show-names');
+
+      setTimeout(() => {
+        popup.classList.add('show');
+        coloredBlock.classList.add('show');
+        appState = "popup";
+        
+        setTimeout(() => {
+          popup.classList.remove('show');
+          
+          setTimeout(() => {
+            coloredBlock.classList.add('zoomed');
+
+            setTimeout(() => {
+              namesGrid.classList.add('show-names');
+              appState = "zoomed_view";
+
+              // 2. Remain colored for 10 seconds, then go back to normal
+              setTimeout(() => {
+                coloredBlock.classList.remove('zoomed');
+                namesGrid.classList.remove('show-names');
+                
+                setTimeout(() => {
+                  coloredBlock.classList.remove('show');
+                  appState = "idle";
+                }, 1500); // Wait for block scaling down to finish before destroying it
+                
+              }, 10000);
+
+            }, 1500); // Trigger names display after zooming completes
+
+          }, 400); // Gap between popup disappearing and block zooming 
+
+        }, 7000); // 3. Reduce popup time to 7 seconds
+      }, 10);
+    };
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        if (appState === "idle" || appState === "finished") {
+          // Reset classes gracefully before loading modal again
+          coloredBlock.classList.remove('show');
+          coloredBlock.classList.remove('zoomed');
+          namesGrid.classList.remove('show-names');
+
+          appState = "modal";
+          modal.classList.add('show');
+          modalName.focus();
+        } else if (appState === "modal") {
+          triggerPopup();
+        }
+      }
+    });
+
+    modalDonateBtn.addEventListener('click', triggerPopup);
+  </script>
+</body>
+</html>

@@ -174,42 +174,37 @@ export default function TheMainScreen() {
   }, []);
 
   const randomPosition = useCallback((existing: ActiveDonorPopup[]) => {
-    const minTop = 20;
-    const maxTop = 75;
-    const minLeft = 20;
-    const maxLeft = 80;
+    const SLOTS = [
+      { top: 25, left: 16 },
+      { top: 25, left: 50 },
+      { top: 25, left: 84 },
+      { top: 58, left: 16 },
+      { top: 58, left: 50 },
+      { top: 58, left: 84 },
+    ];
 
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const top = minTop + Math.random() * (maxTop - minTop);
-      const left = minLeft + Math.random() * (maxLeft - minLeft);
-      const overlapping = existing.some((popup) => {
-        const t = Number.parseFloat(popup.position.top);
-        const l = Number.parseFloat(popup.position.left);
-        return Math.abs(t - top) < 35 && Math.abs(l - left) < 30;
+    const availableSlots = SLOTS.filter((slot) => {
+      // Check if slot is already occupied by any active popup
+      return !existing.some((popup) => {
+        const pt = Number.parseFloat(popup.position.top);
+        const pl = Number.parseFloat(popup.position.left);
+        // Increase detection radius to ensure we don't accidentally reuse a slot
+        return Math.abs(pt - slot.top) < 20 && Math.abs(pl - slot.left) < 20;
       });
-      if (!overlapping) {
-        return { top: `${top}%`, left: `${left}%` };
-      }
-    }
+    });
 
-    // Grid fallback if random fails to find empty spot
-    const gridCols = [20, 50, 80];
-    const gridRows = [25, 75];
-    for (const t of gridRows) {
-      for (const l of gridCols) {
-        const overlapping = existing.some((popup) => {
-          const pt = Number.parseFloat(popup.position.top);
-          const pl = Number.parseFloat(popup.position.left);
-          return Math.abs(pt - t) < 30 && Math.abs(pl - l) < 20;
-        });
-        if (!overlapping) return { top: `${t}%`, left: `${l}%` };
-      }
-    }
+    // Pick an available predefined slot, or ultimate fallback if screen is cramped
+    const slot = availableSlots.length > 0
+      ? availableSlots[Math.floor(Math.random() * availableSlots.length)]
+      : SLOTS[Math.floor(Math.random() * SLOTS.length)];
 
-    // Ultimate fallback
+    // Add slight natural jitter (±2%) so it feels organic rather than a rigid grid
+    const jitterTop = (Math.random() * 3) - 1.5;
+    const jitterLeft = (Math.random() * 3) - 1.5;
+
     return {
-      top: `${minTop + Math.random() * (maxTop - minTop)}%`,
-      left: `${minLeft + Math.random() * (maxLeft - minLeft)}%`,
+      top: `${slot.top + jitterTop}%`,
+      left: `${slot.left + jitterLeft}%`,
     };
   }, []);
 
@@ -501,10 +496,7 @@ export default function TheMainScreen() {
       setPopupQueue((prev) => prev.slice(1));
 
       setActivePopups((prev) => {
-        const position =
-          prev.length === 0
-            ? { top: "46%", left: "50%" }
-            : randomPosition(prev);
+        const position = randomPosition(prev);
         return [...prev, { id: popupId, donor: nextDonor, position }];
       });
 
@@ -1044,16 +1036,51 @@ export default function TheMainScreen() {
 
 // Simple marquee component
 function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
-  const names = new Set<string>();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [shouldAnimate, setShouldAnimate] = useState(false);
+  const donorTotals = new Map<string, number>();
+
   blocks.forEach((b) => {
-    b.names.forEach((n) => names.add(n.name));
+    b.names.forEach((n) => {
+      const current = donorTotals.get(n.name) || 0;
+      donorTotals.set(n.name, current + (n.qty || 0));
+    });
   });
 
-  const allNames = Array.from(names);
-  if (allNames.length === 0) return null;
+  const allDonors = Array.from(donorTotals.entries());
 
-  const duration = Math.max(20, allNames.length * 5);
-  const items = allNames.map((name, i) => (
+  useEffect(() => {
+    const checkWidth = () => {
+      if (containerRef.current) {
+        const firstChild = containerRef.current.firstElementChild as HTMLElement;
+        const wrapper = containerRef.current.parentElement;
+        if (firstChild && wrapper) {
+          setShouldAnimate(firstChild.scrollWidth > wrapper.clientWidth);
+        }
+      }
+    };
+
+    checkWidth();
+    const initTimer = setTimeout(checkWidth, 150);
+
+    let resizeTimer: number;
+    const handleResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(checkWidth, 100);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      clearTimeout(initTimer);
+      clearTimeout(resizeTimer);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [allDonors.length]);
+
+  if (allDonors.length === 0) return null;
+
+  const duration = Math.max(20, allDonors.length * 5);
+  const items = allDonors.map(([name, qty], i) => (
     <span
       key={i}
       className="inline-flex items-center px-10 text-2xl"
@@ -1066,17 +1093,34 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
       <span className="mr-3 text-base" style={{ color: "#c96b1b" }}>
         🪷
       </span>
-      {name}
+      {name} (₹{formatINR(qty * COST_PER_NAME)})
     </span>
   ));
 
   return (
-    <div
-      className="flex whitespace-nowrap"
-      style={{ animation: `marquee ${duration}s linear infinite` }}
-    >
-      {items}
-      {items}
-    </div>
+    <>
+      <div 
+        className="shrink-0 h-full flex items-center px-6 font-bold uppercase tracking-wider text-xs z-20 relative"
+        style={{
+          background: "linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0.85))",
+          color: "#8d785f",
+          borderRight: "1px solid rgba(61,45,19,0.08)",
+          boxShadow: "4px 0 20px rgba(0,0,0,0.05)",
+          fontFamily: '"Cinzel", Georgia, serif',
+        }}
+      >
+        Today's Donor List
+      </div>
+      <div className="flex-1 overflow-hidden h-full flex items-center relative">
+        <div
+          ref={containerRef}
+          className={`flex whitespace-nowrap ${shouldAnimate ? "" : "w-full justify-center"}`}
+          style={{ animation: shouldAnimate ? `marquee ${duration}s linear infinite` : "none" }}
+        >
+          <div className="flex whitespace-nowrap">{items}</div>
+          {shouldAnimate && <div className="flex whitespace-nowrap">{items}</div>}
+        </div>
+      </div>
+    </>
   );
 }
