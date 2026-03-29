@@ -429,6 +429,39 @@ export default function DonorFormPage() {
       return;
     }
 
+    // ── Auth guard ────────────────────────────────────────────────────────────
+    // Guard 1: Fast client-side check — authUser should always be set here
+    if (!authUser) {
+      setStatus("Session not found. Please log in again.");
+      setIsAuthorized(false);
+      return;
+    }
+
+    // Guard 2: Re-verify the session server-side in case it expired mid-session
+    try {
+      const meRes = await fetch("/api/donor-form/me", { cache: "no-store" });
+      if (!meRes.ok) {
+        // Session expired or invalidated — log the volunteer out gracefully
+        setAuthUser(null);
+        setIsAuthorized(false);
+        setStatus("Your session has expired. Please log in again to submit.");
+        return;
+      }
+      const meData = (await meRes.json()) as { user?: AuthUser };
+      if (!meData.user) {
+        setAuthUser(null);
+        setIsAuthorized(false);
+        setStatus("Your session has expired. Please log in again to submit.");
+        return;
+      }
+      // Refresh local authUser with the latest server state (e.g. updated totals)
+      setAuthUser(meData.user);
+    } catch {
+      setStatus("Could not verify session. Please check your connection and try again.");
+      return;
+    }
+    // ── End auth guard ────────────────────────────────────────────────────────
+
     setSubmitting(true);
     setStatus("Processing...");
 

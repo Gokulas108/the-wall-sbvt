@@ -123,7 +123,11 @@ function PaymentResultContent() {
     if (isSuccess && !isInvalid && pendingData && !savedDone) {
       void saveDonorRecord();
     }
-  }, [isSuccess, isInvalid, pendingData, savedDone, saveDonorRecord]);
+    // Clear stale sessionStorage on failure or invalid — nothing to save
+    if ((isFailed || isInvalid) && typeof window !== "undefined") {
+      sessionStorage.removeItem("kirtan-pending-payment");
+    }
+  }, [isSuccess, isFailed, isInvalid, pendingData, savedDone, saveDonorRecord]);
 
   const parsedAmount = parseFloat(amount || "0");
 

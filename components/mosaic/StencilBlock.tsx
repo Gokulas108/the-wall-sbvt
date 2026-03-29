@@ -74,10 +74,11 @@ export const StencilBlock = memo(function StencilBlock({
 
       {/* Hover overlay */}
       <div
-        className={`absolute inset-0 z-5 pointer-events-none transition-opacity duration-200 ${hasHover ? "opacity-0 group-hover:opacity-100" : "opacity-0"}`}
+        className={`absolute inset-0 z-5 pointer-events-none transition-all duration-150 ${hasHover ? "opacity-0 group-hover:opacity-100" : "opacity-0"}`}
         style={{
-          boxShadow: "inset 0 0 0 2px rgba(232, 134, 12, 0.3)",
-          background: "rgba(232, 134, 12, 0.03)",
+          background: "rgba(201, 107, 27, 0.18)",
+          boxShadow:
+            "inset 0 0 0 2px rgba(232, 170, 50, 0.75), inset 0 0 20px rgba(201, 107, 27, 0.35)",
         }}
       />
 

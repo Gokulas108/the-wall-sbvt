@@ -1768,22 +1768,37 @@ export default function WebAppPage() {
         animate={{ opacity: isBooting ? 0 : 1 }}
         transition={{ delay: 0.3, duration: 0.5 }}
       >
-        {/* Instruction text */}
-        <p
-          className="text-center mb-4 select-none"
+        {/* Welcoming instruction banner */}
+        <div
+          className="flex flex-col items-center gap-1.5 mb-5 px-6 py-4 rounded-2xl select-none"
           style={{
-            fontFamily: '"Playfair Display", serif',
-            fontStyle: "italic",
-            fontSize: "1.15rem",
-            fontWeight: 600,
-            background: "linear-gradient(135deg, #7a461d, #c96b1b, #d7ad57)",
-            WebkitBackgroundClip: "text",
-            color: "transparent",
-            letterSpacing: "0.02em",
+            background: "linear-gradient(135deg, rgba(201,107,27,0.07), rgba(215,173,87,0.1))",
+            border: "1px solid rgba(201,107,27,0.2)",
+            boxShadow: "0 4px 24px rgba(201,107,27,0.08)",
           }}
         >
-          Select a block by clicking on it
-        </p>
+          <div className="flex items-center gap-2.5">
+            <span style={{ fontSize: "1.3rem" }}>🪷</span>
+            <p
+              style={{
+                fontFamily: '"Playfair Display", serif',
+                fontStyle: "italic",
+                fontSize: "1.25rem",
+                fontWeight: 700,
+                background: "linear-gradient(135deg, #7a461d, #c96b1b, #d7ad57)",
+                WebkitBackgroundClip: "text",
+                color: "transparent",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Select a block to begin your inscription
+            </p>
+            <span style={{ fontSize: "1.3rem" }}>🪷</span>
+          </div>
+          <p className="text-[11px] tracking-wider uppercase" style={{ color: "rgba(66,44,25,0.6)" }}>
+            Click any block on the wall below to choose your sacred space
+          </p>
+        </div>
 
         {/* Grid + labels wrapper */}
         <div
@@ -2204,11 +2219,11 @@ export default function WebAppPage() {
                   {!formSamePhone && (
                     <>
                       <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>WhatsApp Number</label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 min-w-0">
                         <select
                           value={formWaCode}
                           onChange={(e) => setFormWaCode(e.target.value)}
-                          className="w-28 px-1 py-2 rounded-lg text-xs outline-none"
+                          className="shrink-0 w-24 px-1 py-2 rounded-lg text-xs outline-none"
                           style={{
                             background: "rgba(255,250,244,0.96)",
                             border: "1px solid rgba(222,182,131,0.36)",
@@ -2228,7 +2243,7 @@ export default function WebAppPage() {
                           onChange={(e) => setFormWa(e.target.value)}
                           maxLength={20}
                           placeholder="WhatsApp"
-                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          className="min-w-0 flex-1 px-3 py-2 rounded-lg text-sm outline-none"
                           style={{
                             background: "rgba(255,250,244,0.96)",
                             border: "1px solid rgba(222,182,131,0.36)",
