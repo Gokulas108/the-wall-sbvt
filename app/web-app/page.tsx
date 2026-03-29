@@ -1262,6 +1262,20 @@ export default function WebAppPage() {
                   </div>
 
                   {/* Pay Online button */}
+                  {/* Gateway notice */}
+                  <div
+                    className="flex items-start gap-2 px-3 py-2 rounded-lg text-[11px] leading-snug"
+                    style={{
+                      background: "rgba(224,184,96,0.1)",
+                      border: "1px solid rgba(224,184,96,0.28)",
+                      color: "rgba(255,230,170,0.9)",
+                    }}
+                  >
+                    <span className="shrink-0 mt-px">⚠️</span>
+                    <span>
+                      Some banks have issues with net banking on our payment gateway. We are fixing it—please use UPI or card for now.
+                    </span>
+                  </div>
                   <button
                     className="w-full py-3 rounded-lg text-sm font-bold text-white"
                     style={{
@@ -2335,6 +2349,21 @@ export default function WebAppPage() {
                       style={{ color: "#fff5e7" }}
                     >
                       ₹{formatINR(totalAmount)}
+                    </span>
+                  </div>
+
+                  {/* Gateway notice */}
+                  <div
+                    className="flex items-start gap-2 px-3 py-2 rounded-lg text-[11px] leading-snug"
+                    style={{
+                      background: "rgba(224,184,96,0.1)",
+                      border: "1px solid rgba(224,184,96,0.28)",
+                      color: "rgba(255,230,170,0.9)",
+                    }}
+                  >
+                    <span className="shrink-0 mt-px">⚠️</span>
+                    <span>
+                      Some banks have issues with net banking on our payment gateway. We are fixing it—please use UPI or card for now.
                     </span>
                   </div>
 
