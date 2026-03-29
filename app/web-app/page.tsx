@@ -838,7 +838,7 @@ export default function WebAppPage() {
     setSubmitting(false);
   }
 
-  function handlePayOnline() {
+  async function handlePayOnline() {
     if (!focusedBlock) return;
     if (!validateFormFields("donate")) return;
 
@@ -848,34 +848,63 @@ export default function WebAppPage() {
     const wa = formSamePhone ? formPhone : formWa;
     const payAmount = qtyNumber * COST_PER_NAME;
 
-    // Save pending payment data so the result page can finalise the donor record on success
-    const pendingData = {
-      block_id: focusedBlock,
-      name: donorName,
-      qty: qtyNumber,
-      date_of_birth: formDob,
-      email: formEmail.trim(),
-      phone: `${formPhoneCode} ${phone}`,
-      whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
-      amount: payAmount,
-    };
-    sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
-
     setPaymentLoading(true);
     setPaymentError("");
     setFormStatus("");
 
-    // Redirect browser to Laravel's redirect-to-gateway page with query params
-    const params = new URLSearchParams({
-      name: donorName,
-      email: formEmail.trim(),
-      mobile: phone,
-      amount: String(payAmount),
+    try {
+      // 1. Get a server-signed HMAC token before redirecting.
+      //    This ties the payment attempt to our server — no one can save
+      //    to the DB without a valid token generated here.
+      const prepRes = await fetch("/api/payment/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          block_id: focusedBlock,
+          name: donorName,
+          amount: payAmount,
+        }),
+      });
+      const prepData = await prepRes.json() as { success: boolean; token?: string; ts?: number; error?: string };
+      if (!prepData.success || !prepData.token) {
+        const msg = prepData.error ?? "Could not initiate payment. Please try again.";
+        setPaymentError(msg);
+        setFormStatus(msg);
+        return;
+      }
 
-      api: "1",
-    }).toString();
+      // 2. Save pending payment data + token so the result page can finalise the DB record
+      const pendingData = {
+        block_id: focusedBlock,
+        name: donorName,
+        qty: qtyNumber,
+        date_of_birth: formDob,
+        email: formEmail.trim(),
+        phone: `${formPhoneCode} ${phone}`,
+        whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
+        amount: payAmount,
+        // HMAC fields — verified server-side in /api/payment/confirm
+        _token: prepData.token,
+        _ts: prepData.ts,
+      };
+      sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
 
-    window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
+      // 3. Redirect browser to Laravel's redirect-to-gateway page with query params
+      const params = new URLSearchParams({
+        name: donorName,
+        email: formEmail.trim(),
+        mobile: phone,
+        amount: String(payAmount),
+        api: "1",
+      }).toString();
+
+      window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
+    } catch {
+      setPaymentError("Network error. Please check your connection and try again.");
+      setFormStatus("Network error. Please check your connection and try again.");
+    } finally {
+      setPaymentLoading(false);
+    }
   }
 
   async function handleDonate() {
