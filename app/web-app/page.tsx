@@ -442,7 +442,7 @@ export default function WebAppPage() {
             const hasExistingZoom =
               focusBaseRef.current.style.transform &&
               focusBaseRef.current.style.transform !==
-                "translate3d(0, 0, 0) scale(1)";
+              "translate3d(0, 0, 0) scale(1)";
 
             if (hasExistingZoom) {
               [focusBaseRef.current, focusColorRef.current].forEach((layer) => {
@@ -702,10 +702,9 @@ export default function WebAppPage() {
       const digits = formPhone.replace(/\D/g, "").length;
       if (digits < phCountry.min || digits > phCountry.max) {
         setFormStatus(
-          `Mobile number must be ${
-            phCountry.min === phCountry.max
-              ? phCountry.min
-              : `${phCountry.min}-${phCountry.max}`
+          `Mobile number must be ${phCountry.min === phCountry.max
+            ? phCountry.min
+            : `${phCountry.min}-${phCountry.max}`
           } digits for ${phCountry.name}.`
         );
         return false;
@@ -723,10 +722,9 @@ export default function WebAppPage() {
         const digits = wa.replace(/\D/g, "").length;
         if (digits < waCountry.min || digits > waCountry.max) {
           setFormStatus(
-            `WhatsApp number must be ${
-              waCountry.min === waCountry.max
-                ? waCountry.min
-                : `${waCountry.min}-${waCountry.max}`
+            `WhatsApp number must be ${waCountry.min === waCountry.max
+              ? waCountry.min
+              : `${waCountry.min}-${waCountry.max}`
             } digits for ${waCountry.name}.`
           );
           return false;
@@ -785,9 +783,9 @@ export default function WebAppPage() {
           actionType === "pledge"
             ? await submitPledge(alloc.id, { ...payloadBase, qty: alloc.qty })
             : await submitDonation(alloc.id, {
-                ...payloadBase,
-                qty: alloc.qty,
-              })
+              ...payloadBase,
+              qty: alloc.qty,
+            })
         ) as DonationResponse;
         if (!data || alloc.id === focusedBlock) data = response;
         if (!firstReceipt && response.receipt) firstReceipt = response.receipt;
@@ -840,56 +838,57 @@ export default function WebAppPage() {
     setSubmitting(false);
   }
 
-  async function handlePayOnline() {
+  function handlePayOnline() {
     if (!focusedBlock) return;
     if (!validateFormFields("donate")) return;
+
     const qtyNumber = parseInt(formQtyInput, 10);
     const donorName = formName.trim();
     const phone = formPhone.trim();
     const wa = formSamePhone ? formPhone : formWa;
     const payAmount = qtyNumber * COST_PER_NAME;
 
+    // Save pending payment data so the result page can finalise the donor record on success
+    const pendingData = {
+      block_id: focusedBlock,
+      name: donorName,
+      qty: qtyNumber,
+      date_of_birth: formDob,
+      email: formEmail.trim(),
+      phone: `${formPhoneCode} ${phone}`,
+      whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
+      amount: payAmount,
+    };
+    sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
+
     setPaymentLoading(true);
     setPaymentError("");
     setFormStatus("");
-    try {
-      // Save pending payment data so the result page can save the donor record on success
-      const pendingData = {
-        block_id: focusedBlock,
-        name: donorName,
-        qty: qtyNumber,
-        date_of_birth: formDob,
-        email: formEmail.trim(),
-        phone: `${formPhoneCode} ${phone}`,
-        whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
-        amount: payAmount,
-      };
-      sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
 
-      const res = await fetch("/api/payment/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: donorName,
-          email: formEmail.trim(),
-          mobile: phone,
-          amount: payAmount,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.redirect_url) {
-        window.location.href = data.redirect_url;
-        return;
-      }
-      const errMsg = data.message || data.error || "Payment initiation failed. Please try again.";
-      setPaymentError(errMsg);
-      setFormStatus(errMsg);
-    } catch {
-      setPaymentError("Network error. Please check your connection and try again.");
-      setFormStatus("Network error. Please check your connection and try again.");
-    } finally {
-      setPaymentLoading(false);
+    // Build a hidden form and submit it directly to the payment gateway (form POST)
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "https://test.birnagar.org/payment/initiate";
+    form.style.display = "none";
+
+    const fields: Record<string, string | number | boolean> = {
+      name: donorName,
+      email: formEmail.trim(),
+      mobile: phone,
+      amount: payAmount,
+      api: true,
+    };
+
+    for (const [key, value] of Object.entries(fields)) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
     }
+
+    document.body.appendChild(form);
+    form.submit();
   }
 
   async function handleDonate() {
@@ -1335,12 +1334,12 @@ export default function WebAppPage() {
               const barColor = full
                 ? "rgba(255,246,233,0.08)"
                 : pct >= 85
-                ? "linear-gradient(90deg, #b04010, #e05020)"
-                : pct >= 55
-                ? "linear-gradient(90deg, #c96b1b, #e0a030)"
-                : pct >= 25
-                ? "linear-gradient(90deg, #2d9e6b, #4eca94)"
-                : "linear-gradient(90deg, #1a7a4e, #2dbd78)";
+                  ? "linear-gradient(90deg, #b04010, #e05020)"
+                  : pct >= 55
+                    ? "linear-gradient(90deg, #c96b1b, #e0a030)"
+                    : pct >= 25
+                      ? "linear-gradient(90deg, #2d9e6b, #4eca94)"
+                      : "linear-gradient(90deg, #1a7a4e, #2dbd78)";
               return (
                 <button
                   key={id}
@@ -1357,17 +1356,17 @@ export default function WebAppPage() {
                     border: full
                       ? "1px solid rgba(228,180,121,0.06)"
                       : pct >= 85
-                      ? "1px solid rgba(220,100,60,0.45)"
-                      : pct >= 55
-                      ? "1px solid rgba(228,150,60,0.4)"
-                      : "1px solid rgba(45,180,120,0.35)",
+                        ? "1px solid rgba(220,100,60,0.45)"
+                        : pct >= 55
+                          ? "1px solid rgba(228,150,60,0.4)"
+                          : "1px solid rgba(45,180,120,0.35)",
                     color: full ? "rgba(255,221,168,0.25)" : "#ffe9cc",
                     opacity: full ? 0.35 : 1,
                     boxShadow: full ? "none" : pct >= 85
                       ? "0 0 6px rgba(200,80,30,0.2)"
                       : pct >= 25
-                      ? "0 0 6px rgba(45,180,120,0.15)"
-                      : "none",
+                        ? "0 0 6px rgba(45,180,120,0.15)"
+                        : "none",
                   }}
                 >
                   {/* Fill level bar at the bottom */}
@@ -1753,77 +1752,77 @@ export default function WebAppPage() {
         animate={{ opacity: isBooting ? 0 : 1 }}
         transition={{ delay: 0.3, duration: 0.5 }}
       >
-          {/* Instruction text */}
-          <p
-            className="text-center mb-4 select-none"
-            style={{
-              fontFamily: '"Playfair Display", serif',
-              fontStyle: "italic",
-              fontSize: "1.15rem",
-              fontWeight: 600,
-              background: "linear-gradient(135deg, #7a461d, #c96b1b, #d7ad57)",
-              WebkitBackgroundClip: "text",
-              color: "transparent",
-              letterSpacing: "0.02em",
-            }}
-          >
-            Select a block by clicking on it
-          </p>
+        {/* Instruction text */}
+        <p
+          className="text-center mb-4 select-none"
+          style={{
+            fontFamily: '"Playfair Display", serif',
+            fontStyle: "italic",
+            fontSize: "1.15rem",
+            fontWeight: 600,
+            background: "linear-gradient(135deg, #7a461d, #c96b1b, #d7ad57)",
+            WebkitBackgroundClip: "text",
+            color: "transparent",
+            letterSpacing: "0.02em",
+          }}
+        >
+          Select a block by clicking on it
+        </p>
 
-          {/* Grid + labels wrapper */}
+        {/* Grid + labels wrapper */}
+        <div
+          className="relative"
+          style={{
+            width: "min(92vw, 72vh, 840px)",
+            height: "min(92vw, 72vh, 840px)",
+            paddingLeft: "28px",
+            paddingTop: "28px",
+          }}
+        >
+          {/* Column labels (A–J) above the grid */}
           <div
-            className="relative"
-            style={{
-              width: "min(92vw, 72vh, 840px)",
-              height: "min(92vw, 72vh, 840px)",
-              paddingLeft: "28px",
-              paddingTop: "28px",
-            }}
+            className="absolute top-0 left-[28px] right-0 grid z-10"
+            style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}
           >
-            {/* Column labels (A–J) above the grid */}
-            <div
-              className="absolute top-0 left-[28px] right-0 grid z-10"
-              style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}
-            >
-              {COL_LABELS.map((label) => (
-                <span
-                  key={`col-${label}`}
-                  className="text-center text-[11px] font-bold tracking-wider"
-                  style={{ color: "rgba(66,44,25,0.78)", lineHeight: "28px" }}
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
-
-            {/* Row labels (1–10) to the left of the grid */}
-            <div
-              className="absolute left-0 top-[28px] bottom-0 grid z-10"
-              style={{ gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`, width: "28px" }}
-            >
-              {Array.from({ length: GRID_SIZE }, (_, i) => (
-                <span
-                  key={`row-${i + 1}`}
-                  className="flex items-center justify-center text-[11px] font-bold tracking-wider"
-                  style={{ color: "rgba(66,44,25,0.78)" }}
-                >
-                  {i + 1}
-                </span>
-              ))}
-            </div>
-
-            {/* The grid itself */}
-            <MosaicGrid
-              blocks={blocks}
-              isColorMode={isColorMode}
-              selectedBlock={focusedBlock}
-              onBlockClick={openBlock}
-              onBlockHoverStart={handleBlockHoverStart}
-              onBlockHoverMove={handleBlockHoverMove}
-              onBlockHoverEnd={handleBlockHoverEnd}
-              className="w-full h-full"
-            />
+            {COL_LABELS.map((label) => (
+              <span
+                key={`col-${label}`}
+                className="text-center text-[11px] font-bold tracking-wider"
+                style={{ color: "rgba(66,44,25,0.78)", lineHeight: "28px" }}
+              >
+                {label}
+              </span>
+            ))}
           </div>
+
+          {/* Row labels (1–10) to the left of the grid */}
+          <div
+            className="absolute left-0 top-[28px] bottom-0 grid z-10"
+            style={{ gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`, width: "28px" }}
+          >
+            {Array.from({ length: GRID_SIZE }, (_, i) => (
+              <span
+                key={`row-${i + 1}`}
+                className="flex items-center justify-center text-[11px] font-bold tracking-wider"
+                style={{ color: "rgba(66,44,25,0.78)" }}
+              >
+                {i + 1}
+              </span>
+            ))}
+          </div>
+
+          {/* The grid itself */}
+          <MosaicGrid
+            blocks={blocks}
+            isColorMode={isColorMode}
+            selectedBlock={focusedBlock}
+            onBlockClick={openBlock}
+            onBlockHoverStart={handleBlockHoverStart}
+            onBlockHoverMove={handleBlockHoverMove}
+            onBlockHoverEnd={handleBlockHoverEnd}
+            className="w-full h-full"
+          />
+        </div>
 
         {hoverTooltip && !focusedBlock && (
           <div
@@ -2309,23 +2308,23 @@ export default function WebAppPage() {
                   </div>
 
                   <button
-                      className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
-                      style={{
-                        background: "linear-gradient(135deg, #2d6a4f, #52b788)",
-                        opacity: paymentLoading || submitting ? 0.7 : 1,
-                      }}
-                      disabled={paymentLoading || submitting}
-                      onClick={() => void handlePayOnline()}
-                    >
-                      {paymentLoading ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />
-                          Redirecting
-                        </span>
-                      ) : (
-                        "Pay Online"
-                      )}
-                    </button>
+                    className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
+                    style={{
+                      background: "linear-gradient(135deg, #2d6a4f, #52b788)",
+                      opacity: paymentLoading || submitting ? 0.7 : 1,
+                    }}
+                    disabled={paymentLoading || submitting}
+                    onClick={() => void handlePayOnline()}
+                  >
+                    {paymentLoading ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />
+                        Redirecting
+                      </span>
+                    ) : (
+                      "Pay Online"
+                    )}
+                  </button>
 
                   {paymentError && (
                     <div
