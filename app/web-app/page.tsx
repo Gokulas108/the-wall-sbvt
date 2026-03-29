@@ -865,30 +865,17 @@ export default function WebAppPage() {
     setPaymentError("");
     setFormStatus("");
 
-    // Build a hidden form and submit it directly to the payment gateway (form POST)
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = "https://birnagar.org/payment/initiate";
-    form.style.display = "none";
-
-    const fields: Record<string, string | number | boolean> = {
+    // Redirect browser to Laravel's redirect-to-gateway page with query params
+    const params = new URLSearchParams({
       name: donorName,
       email: formEmail.trim(),
       mobile: phone,
-      amount: payAmount,
-      api: true,
-    };
+      amount: String(payAmount),
 
-    for (const [key, value] of Object.entries(fields)) {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = String(value);
-      form.appendChild(input);
-    }
+      api: "1",
+    }).toString();
 
-    document.body.appendChild(form);
-    form.submit();
+    window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
   }
 
   async function handleDonate() {
