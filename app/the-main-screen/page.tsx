@@ -1042,8 +1042,19 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
 
   blocks.forEach((b) => {
     b.names.forEach((n) => {
-      const current = donorTotals.get(n.name) || 0;
-      donorTotals.set(n.name, current + (n.qty || 0));
+      const dateStr = n.created_at || n.createdAt;
+      if (!dateStr) return;
+      
+      const d = new Date(dateStr);
+      const today = new Date();
+      if (
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate()
+      ) {
+        const current = donorTotals.get(n.name) || 0;
+        donorTotals.set(n.name, current + (n.qty || 0));
+      }
     });
   });
 
@@ -1076,8 +1087,6 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
       window.removeEventListener("resize", handleResize);
     };
   }, [allDonors.length]);
-
-  if (allDonors.length === 0) return null;
 
   const duration = Math.max(20, allDonors.length * 5);
   const items = allDonors.map(([name, qty], i) => (
@@ -1118,7 +1127,7 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
           style={{ animation: shouldAnimate ? `marquee ${duration}s linear infinite` : "none" }}
         >
           <div className="flex whitespace-nowrap">{items}</div>
-          {shouldAnimate && <div className="flex whitespace-nowrap">{items}</div>}
+          {shouldAnimate && items.length > 0 && <div className="flex whitespace-nowrap">{items}</div>}
         </div>
       </div>
     </>

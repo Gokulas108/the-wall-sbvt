@@ -28,20 +28,7 @@ import {
   type BlockData,
 } from "@/lib/mosaic/engine";
 import { binaryFitFontSize } from "@/lib/mosaic/font-fitter";
-
-const COUNTRY_CODES = [
-  ["India", "+91"],
-  ["USA", "+1"],
-  ["UK", "+44"],
-  ["Australia", "+61"],
-  ["Canada", "+1"],
-  ["Germany", "+49"],
-  ["Singapore", "+65"],
-  ["UAE", "+971"],
-  ["Bangladesh", "+880"],
-  ["Nepal", "+977"],
-  ["Sri Lanka", "+94"],
-];
+import { COUNTRY_CODES } from "@/app/donor-form/countries";
 
 type SearchItem = {
   kind: "name" | "phone" | "serial";
@@ -199,6 +186,10 @@ function buildFocusColorMarkup(
     .join("");
 }
 
+const COL_LABELS = Array.from({ length: GRID_SIZE }, (_, i) =>
+  String.fromCharCode(65 + i)
+);
+
 export default function WebAppPage() {
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -274,6 +265,8 @@ export default function WebAppPage() {
   const [focusLoading, setFocusLoading] = useState(false);
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [pledgeDays, setPledgeDays] = useState<number | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   // Focus view refs
   const focusBaseRef = useRef<HTMLDivElement>(null);
@@ -689,34 +682,82 @@ export default function WebAppPage() {
     [],
   );
 
+  function validateFormFields(actionType: "donate" | "pledge", selectedPledgeDays?: number): boolean {
+    if (!formName.trim()) {
+      setFormStatus("Please enter a name.");
+      return false;
+    }
+    const qtyNumber = parseInt(formQtyInput, 10);
+    if (!Number.isFinite(qtyNumber) || qtyNumber < 1) {
+      setFormStatus("Invalid quantity.");
+      return false;
+    }
+    if (!formPhone.trim()) {
+      setFormStatus("Phone required.");
+      return false;
+    }
+    // Phone digit validation
+    const phCountry = COUNTRY_CODES.find((c) => c.code === formPhoneCode);
+    if (phCountry) {
+      const digits = formPhone.replace(/\D/g, "").length;
+      if (digits < phCountry.min || digits > phCountry.max) {
+        setFormStatus(
+          `Mobile number must be ${
+            phCountry.min === phCountry.max
+              ? phCountry.min
+              : `${phCountry.min}-${phCountry.max}`
+          } digits for ${phCountry.name}.`
+        );
+        return false;
+      }
+    }
+    const wa = formSamePhone ? formPhone : formWa;
+    if (!wa.trim()) {
+      setFormStatus("WhatsApp required.");
+      return false;
+    }
+    // WhatsApp digit validation
+    if (!formSamePhone) {
+      const waCountry = COUNTRY_CODES.find((c) => c.code === formWaCode);
+      if (waCountry) {
+        const digits = wa.replace(/\D/g, "").length;
+        if (digits < waCountry.min || digits > waCountry.max) {
+          setFormStatus(
+            `WhatsApp number must be ${
+              waCountry.min === waCountry.max
+                ? waCountry.min
+                : `${waCountry.min}-${waCountry.max}`
+            } digits for ${waCountry.name}.`
+          );
+          return false;
+        }
+      }
+    }
+    if (!formEmail.trim()) {
+      setFormStatus("Email is required.");
+      return false;
+    }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(formEmail.trim())) {
+      setFormStatus("Please enter a valid email address.");
+      return false;
+    }
+    if (actionType === "pledge" && !selectedPledgeDays) {
+      setFormStatus("Please select pledge days.");
+      return false;
+    }
+    return true;
+  }
+
   async function handleDonorSubmit(
     actionType: "donate" | "pledge",
     selectedPledgeDays?: number,
   ) {
     if (!focusedBlock) return;
+    if (!validateFormFields(actionType, selectedPledgeDays)) return;
     const qtyNumber = parseInt(formQtyInput, 10);
     const donorName = formName.trim();
-    if (!formName.trim()) {
-      setFormStatus("Please enter a name.");
-      return;
-    }
-    if (!Number.isFinite(qtyNumber) || qtyNumber < 1) {
-      setFormStatus("Invalid quantity.");
-      return;
-    }
-    if (!formPhone.trim()) {
-      setFormStatus("Phone required.");
-      return;
-    }
     const wa = formSamePhone ? formPhone : formWa;
-    if (!wa.trim()) {
-      setFormStatus("WhatsApp required.");
-      return;
-    }
-    if (actionType === "pledge" && !selectedPledgeDays) {
-      setFormStatus("Please select pledge days.");
-      return;
-    }
 
     setSubmitting(true);
     setFormStatus("");
@@ -797,6 +838,58 @@ export default function WebAppPage() {
       setFormStatus((e as Error).message || "Error. Please try again.");
     }
     setSubmitting(false);
+  }
+
+  async function handlePayOnline() {
+    if (!focusedBlock) return;
+    if (!validateFormFields("donate")) return;
+    const qtyNumber = parseInt(formQtyInput, 10);
+    const donorName = formName.trim();
+    const phone = formPhone.trim();
+    const wa = formSamePhone ? formPhone : formWa;
+    const payAmount = qtyNumber * COST_PER_NAME;
+
+    setPaymentLoading(true);
+    setPaymentError("");
+    setFormStatus("");
+    try {
+      // Save pending payment data so the result page can save the donor record on success
+      const pendingData = {
+        block_id: focusedBlock,
+        name: donorName,
+        qty: qtyNumber,
+        date_of_birth: formDob,
+        email: formEmail.trim(),
+        phone: `${formPhoneCode} ${phone}`,
+        whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
+        amount: payAmount,
+      };
+      sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
+
+      const res = await fetch("/api/payment/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: donorName,
+          email: formEmail.trim(),
+          mobile: phone,
+          amount: payAmount,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.redirect_url) {
+        window.location.href = data.redirect_url;
+        return;
+      }
+      const errMsg = data.message || data.error || "Payment initiation failed. Please try again.";
+      setPaymentError(errMsg);
+      setFormStatus(errMsg);
+    } catch {
+      setPaymentError("Network error. Please check your connection and try again.");
+      setFormStatus("Network error. Please check your connection and try again.");
+    } finally {
+      setPaymentLoading(false);
+    }
   }
 
   async function handleDonate() {
@@ -898,38 +991,434 @@ export default function WebAppPage() {
     totalNames += b.total_used;
   });
 
+  // Generate all 100 block IDs: A1–A10, B1–B10 … J1–J10
+  const allBlockIds = useMemo(() => {
+    const ids: string[] = [];
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        ids.push(String.fromCharCode(65 + c) + (r + 1));
+      }
+    }
+    return ids;
+  }, []);
+
+  const pickRandomBlock = useCallback(() => {
+    const available = allBlockIds.filter((id) => {
+      const b = blocks.get(id);
+      const remaining = b ? NAMES_PER_BLOCK - b.total_used : NAMES_PER_BLOCK;
+      return remaining > 0;
+    });
+    if (!available.length) return;
+    const pick = available[Math.floor(Math.random() * available.length)];
+    void openBlock(pick);
+  }, [allBlockIds, blocks, openBlock]);
+
   if (isMobile) {
     return (
       <div
-        className="min-h-screen w-full flex flex-col items-center justify-center px-4 py-8"
-        style={{ background: "#f2ece2" }}
+        className="min-h-screen w-full flex flex-col"
+        style={{
+          background: "linear-gradient(160deg, rgba(36,20,12,0.98), rgba(50,24,10,0.96) 46%, rgba(68,34,14,0.94))",
+        }}
       >
-        <div className="text-center max-w-md">
+        <LoadingScreen visible={loading} />
+
+        {/* Header */}
+        <div
+          className="px-4 pt-6 pb-4 text-center"
+          style={{ borderBottom: "1px solid rgba(228,180,121,0.15)" }}
+        >
+          <p
+            className="text-sm font-semibold tracking-widest uppercase mb-1"
+            style={{ fontFamily: '"Dancing Script", cursive', color: "rgba(255,221,168,0.9)", fontSize: "1rem" }}
+          >
+            Srila Bhaktivinoda Thakur&apos;s
+          </p>
           <h1
-            className="text-3xl font-bold mb-4"
+            className="text-3xl font-black"
+            style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#fff6ea" }}
+          >
+            Wall of Legacy
+          </h1>
+          <p className="text-xs mt-1" style={{ color: "rgba(245,232,216,0.7)" }}>
+            3-Month Campaign 2026
+          </p>
+          {/* Desktop notice */}
+          <div
+            className="mt-3 mx-auto max-w-sm rounded-lg px-3 py-2 text-xs"
             style={{
-              fontFamily: '"Playfair Display", serif',
-              color: "#2a1509",
+              background: "rgba(201,107,27,0.12)",
+              border: "1px solid rgba(228,180,121,0.2)",
+              color: "rgba(255,230,198,0.88)",
             }}
           >
-            View on Desktop
-          </h1>
-          <p className="text-sm mb-6" style={{ color: "#5c4a3a" }}>
-            The living wall experience is best viewed on a computer browser.
-            Please open this page on a desktop or laptop for the full
-            interactive experience.
-          </p>
-          <p className="text-xs" style={{ color: "#8d785f" }}>
-            You can still submit inscriptions from the{" "}
-            <a
-              href="/donor-form"
-              className="font-semibold"
-              style={{ color: "#c96b1b" }}
+            🖥️ For the full interactive wall experience, please open on a desktop browser.
+          </div>
+        </div>
+
+        {/* Block overlay (focus) */}
+        <AnimatePresence>
+          {focusedBlock && focusData && (
+            <motion.div
+              className="fixed inset-0 z-[100] flex flex-col overflow-y-auto"
+              style={{
+                background: "linear-gradient(160deg, rgba(36,20,12,0.99), rgba(50,24,10,0.98))",
+              }}
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ duration: 0.3 }}
             >
-              donation form
-            </a>
-            .
+              {/* Block header */}
+              <div
+                className="flex items-center justify-between px-4 py-4 shrink-0"
+                style={{ borderBottom: "1px solid rgba(228,180,121,0.15)" }}
+              >
+                <div>
+                  <h2 className="text-xl font-bold" style={{ color: "#fff5e7" }}>
+                    Block {focusedBlock}
+                  </h2>
+                  <div className="flex gap-3 mt-1">
+                    {[
+                      { label: "Used", value: focusData.total_used },
+                      { label: "Left", value: focusData.remaining },
+                    ].map((s) => (
+                      <span key={s.label} className="text-xs" style={{ color: "rgba(255,221,168,0.8)" }}>
+                        {s.label}: <strong style={{ color: "#ffd79c" }}>{s.value}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBlock}
+                  className="px-3 py-2 rounded-lg text-sm font-bold"
+                  style={{
+                    background: "rgba(255,246,233,0.1)",
+                    border: "1px solid rgba(228,180,121,0.26)",
+                    color: "#ffe9cc",
+                  }}
+                >
+                  ← Back
+                </button>
+              </div>
+
+              {/* Donor form */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                <div
+                  className="flex flex-col gap-3 p-4 rounded-2xl"
+                  style={{
+                    background: "rgba(255,246,233,0.07)",
+                    border: "1px solid rgba(228,180,121,0.2)",
+                  }}
+                >
+                  <p
+                    className="text-xs font-bold tracking-wider uppercase"
+                    style={{ color: "rgba(255,230,198,0.85)" }}
+                  >
+                    New Donor
+                  </p>
+
+                  {/* Name + Qty */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>Name</label>
+                      <input
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                        maxLength={40}
+                        placeholder="Donor name"
+                        className="px-3 py-2 rounded-lg outline-none"
+                        style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                      />
+                    </div>
+                    <div className="w-16 flex flex-col gap-1">
+                      <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>Qty</label>
+                      <input
+                        type="text"
+                        value={formQtyInput}
+                        inputMode="numeric"
+                        maxLength={4}
+                        onChange={(e) => setFormQtyInput(e.target.value.replace(/\D/g, ""))}
+                        className="px-2 py-2 rounded-lg outline-none"
+                        style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mobile */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>
+                      Indian Mobile Number
+                    </label>
+                    <div className="flex gap-2">
+                      <div
+                        className="flex items-center px-3 py-2 rounded-lg text-sm font-semibold select-none"
+                        style={{ background: "rgba(220,200,170,0.55)", border: "1px solid rgba(222,182,131,0.36)", color: "#5a3a1a", whiteSpace: "nowrap" }}
+                      >
+                        +91
+                      </div>
+                      <input
+                        type="tel"
+                        value={formPhone}
+                        onChange={(e) => handlePhoneChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        maxLength={10}
+                        placeholder="10-digit number"
+                        inputMode="numeric"
+                        className="flex-1 px-3 py-2 rounded-lg outline-none"
+                        style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* WhatsApp */}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formSamePhone}
+                      onChange={(e) => handleSamePhoneChange(e.target.checked)}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span className="text-xs font-semibold" style={{ color: "#ffe9cc" }}>WhatsApp same as phone</span>
+                  </label>
+
+                  {!formSamePhone && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>WhatsApp Number</label>
+                      <div className="flex gap-2">
+                        <select
+                          value={formWaCode}
+                          onChange={(e) => setFormWaCode(e.target.value)}
+                          className="w-28 px-1 py-2 rounded-lg outline-none"
+                          style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                        >
+                          {COUNTRY_CODES.map((c) => (
+                            <option key={`mwa-${c.name}`} value={c.code}>{c.name} ({c.code})</option>
+                          ))}
+                        </select>
+                        <input
+                          type="tel"
+                          value={formWa}
+                          onChange={(e) => setFormWa(e.target.value)}
+                          maxLength={20}
+                          placeholder="WhatsApp number"
+                          className="flex-1 px-3 py-2 rounded-lg outline-none"
+                          style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DOB */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>Date of Birth <span style={{ color: "rgba(255,230,198,0.5)" }}>(optional)</span></label>
+                    <input
+                      type="date"
+                      value={formDob}
+                      onChange={(e) => setFormDob(e.target.value)}
+                      className="px-3 py-2 rounded-lg outline-none"
+                      style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                    />
+                  </div>
+
+                  {/* Email (required) */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>
+                      Email <span style={{ color: "#f6a05a" }}>*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={formEmail}
+                      onChange={(e) => setFormEmail(e.target.value)}
+                      maxLength={80}
+                      placeholder="Your email address"
+                      className="px-3 py-2 rounded-lg outline-none"
+                      style={{ background: "rgba(255,250,244,0.96)", border: "1px solid rgba(222,182,131,0.36)", color: "#2a1509", fontSize: "16px" }}
+                    />
+                  </div>
+
+                  {/* Total */}
+                  <div
+                    className="flex justify-between items-center px-3 py-2 rounded-lg"
+                    style={{ background: "rgba(255,246,233,0.12)", border: "1px solid rgba(228,180,121,0.24)" }}
+                  >
+                    <span className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.88)" }}>Total</span>
+                    <span className="text-sm font-extrabold" style={{ color: "#fff5e7" }}>₹{formatINR(totalAmount)}</span>
+                  </div>
+
+                  {/* Pay Online button */}
+                  <button
+                    className="w-full py-3 rounded-lg text-sm font-bold text-white"
+                    style={{
+                      background: "linear-gradient(135deg, #2d6a4f, #52b788)",
+                      opacity: paymentLoading ? 0.7 : 1,
+                    }}
+                    disabled={paymentLoading}
+                    onClick={() => void handlePayOnline()}
+                  >
+                    {paymentLoading ? (
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />
+                        Redirecting...
+                      </span>
+                    ) : (
+                      "Pay Online"
+                    )}
+                  </button>
+
+                  {paymentError && (
+                    <div
+                      className="flex items-center gap-2 text-xs p-2 rounded-lg"
+                      style={{ background: "rgba(220,110,90,0.12)", border: "1px solid rgba(220,110,90,0.25)", color: "#ffd7d0" }}
+                    >
+                      <p className="flex-1">{paymentError}</p>
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded text-xs font-bold shrink-0"
+                        style={{ background: "rgba(255,246,233,0.1)", border: "1px solid rgba(228,180,121,0.26)", color: "#ffe9cc" }}
+                        onClick={() => void handlePayOnline()}
+                        disabled={paymentLoading}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {formStatus && (
+                    <div className="text-xs" style={{ color: "#f6d8af" }}>
+                      <p>{formStatus}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Block Selector */}
+        <div className="flex-1 overflow-y-auto px-4 py-5">
+          {/* Stats strip */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs uppercase tracking-wider" style={{ color: "rgba(255,221,168,0.78)" }}>Inscriptions</p>
+              <p className="text-2xl font-black" style={{ color: "#ffd79c" }}>{formatINR(totalNames)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={pickRandomBlock}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{
+                background: "linear-gradient(135deg, #c96b1b, #e0b860)",
+                boxShadow: "0 6px 18px rgba(201,107,27,0.3)",
+              }}
+            >
+              Random Block
+            </button>
+          </div>
+
+          <p
+            className="text-xs uppercase tracking-wider mb-3"
+            style={{ color: "rgba(255,221,168,0.78)" }}
+          >
+            Select a Block to Inscribe
           </p>
+
+          {/* 10×10 block grid */}
+          <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(10, 1fr)" }}>
+            {allBlockIds.map((id) => {
+              const b = blocks.get(id);
+              const used = b?.total_used ?? 0;
+              const remaining = b ? NAMES_PER_BLOCK - used : NAMES_PER_BLOCK;
+              const pct = Math.round((used / NAMES_PER_BLOCK) * 100);
+              const full = remaining === 0;
+              // Fill bar color: green → amber → red-amber → grey when full
+              const barColor = full
+                ? "rgba(255,246,233,0.08)"
+                : pct >= 85
+                ? "linear-gradient(90deg, #b04010, #e05020)"
+                : pct >= 55
+                ? "linear-gradient(90deg, #c96b1b, #e0a030)"
+                : pct >= 25
+                ? "linear-gradient(90deg, #2d9e6b, #4eca94)"
+                : "linear-gradient(90deg, #1a7a4e, #2dbd78)";
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={full}
+                  onClick={() => void openBlock(id)}
+                  title={`Block ${id} · ${used}/${NAMES_PER_BLOCK} used · ${remaining} left`}
+                  className="relative overflow-hidden flex flex-col items-center justify-center rounded-md text-[9px] font-bold transition-all active:scale-95"
+                  style={{
+                    aspectRatio: "1",
+                    background: full
+                      ? "rgba(255,246,233,0.04)"
+                      : "rgba(255,246,233,0.07)",
+                    border: full
+                      ? "1px solid rgba(228,180,121,0.06)"
+                      : pct >= 85
+                      ? "1px solid rgba(220,100,60,0.45)"
+                      : pct >= 55
+                      ? "1px solid rgba(228,150,60,0.4)"
+                      : "1px solid rgba(45,180,120,0.35)",
+                    color: full ? "rgba(255,221,168,0.25)" : "#ffe9cc",
+                    opacity: full ? 0.35 : 1,
+                    boxShadow: full ? "none" : pct >= 85
+                      ? "0 0 6px rgba(200,80,30,0.2)"
+                      : pct >= 25
+                      ? "0 0 6px rgba(45,180,120,0.15)"
+                      : "none",
+                  }}
+                >
+                  {/* Fill level bar at the bottom */}
+                  {!full && pct > 0 && (
+                    <div
+                      className="absolute bottom-0 left-0 right-0"
+                      style={{
+                        height: `${Math.max(3, pct)}%`,
+                        background: barColor,
+                        opacity: 0.45,
+                        borderRadius: "0 0 4px 4px",
+                        transition: "height 0.3s ease",
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10 leading-none">{id}</span>
+                  {pct > 0 && (
+                    <span
+                      className="relative z-10 leading-none mt-0.5"
+                      style={{ fontSize: "7px", opacity: 0.7 }}
+                    >
+                      {pct}%
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4">
+            {[
+              { bar: "linear-gradient(90deg,#1a7a4e,#2dbd78)", border: "rgba(45,180,120,0.35)", label: "< 25% full" },
+              { bar: "linear-gradient(90deg,#2d9e6b,#4eca94)", border: "rgba(45,180,120,0.35)", label: "25–55%" },
+              { bar: "linear-gradient(90deg,#c96b1b,#e0a030)", border: "rgba(228,150,60,0.4)", label: "55–85%" },
+              { bar: "linear-gradient(90deg,#b04010,#e05020)", border: "rgba(220,100,60,0.45)", label: "> 85%" },
+              { bar: "rgba(255,246,233,0.08)", border: "rgba(228,180,121,0.06)", label: "Full", dim: true },
+            ].map((l) => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <div
+                  className="w-3 h-3 rounded-sm"
+                  style={{
+                    background: l.bar,
+                    border: `1px solid ${l.border}`,
+                    opacity: l.dim ? 0.4 : 1,
+                  }}
+                />
+                <span className="text-[10px]" style={{ color: "rgba(255,221,168,0.68)" }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -1209,45 +1698,6 @@ export default function WebAppPage() {
           </AnimatePresence>
         </div>
 
-        {/* Complete Pledge */}
-        <div
-          className="p-5 rounded-2xl"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(38,20,10,0.9), rgba(48,24,12,0.78))",
-            border: "1px solid rgba(170,120,75,0.14)",
-            boxShadow: "0 18px 40px rgba(10,6,4,0.36)",
-          }}
-        >
-          <h3
-            className="text-lg font-bold"
-            style={{
-              fontFamily: '"Playfair Display", serif',
-              color: "#fff1df",
-            }}
-          >
-            Already taken a pledge to donate?
-          </h3>
-          <p
-            className="text-sm mt-2 mb-3"
-            style={{ color: "rgba(245,232,216,0.9)" }}
-          >
-            Complete your pledge donation and secure the inscription for your
-            chosen devotee name.
-          </p>
-          <button
-            type="button"
-            onClick={() => router.push("/complete-pledge")}
-            className="px-4 py-2 rounded-lg text-sm font-bold"
-            style={{
-              background: "linear-gradient(135deg, #c96b1b, #e0b860)",
-              color: "#fff",
-            }}
-          >
-            Complete Now
-          </button>
-        </div>
-
         {/* Stats */}
         <div
           className="p-4 rounded-2xl"
@@ -1298,28 +1748,82 @@ export default function WebAppPage() {
 
       {/* Mosaic area (right 67%) */}
       <motion.div
-        className="w-full flex-1 flex items-center justify-center relative p-4 pb-16 sm:p-5 sm:pb-16 lg:p-6 lg:pb-6"
+        className="w-full flex-1 flex flex-col items-center justify-center relative p-4 pb-16 sm:p-5 sm:pb-16 lg:p-6 lg:pb-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: isBooting ? 0 : 1 }}
         transition={{ delay: 0.3, duration: 0.5 }}
       >
-        <div
-          style={{
-            width: "min(92vw, 72vh, 840px)",
-            height: "min(92vw, 72vh, 840px)",
-          }}
-        >
-          <MosaicGrid
-            blocks={blocks}
-            isColorMode={isColorMode}
-            selectedBlock={focusedBlock}
-            onBlockClick={openBlock}
-            onBlockHoverStart={handleBlockHoverStart}
-            onBlockHoverMove={handleBlockHoverMove}
-            onBlockHoverEnd={handleBlockHoverEnd}
-            className="w-full h-full"
-          />
-        </div>
+          {/* Instruction text */}
+          <p
+            className="text-center mb-4 select-none"
+            style={{
+              fontFamily: '"Playfair Display", serif',
+              fontStyle: "italic",
+              fontSize: "1.15rem",
+              fontWeight: 600,
+              background: "linear-gradient(135deg, #7a461d, #c96b1b, #d7ad57)",
+              WebkitBackgroundClip: "text",
+              color: "transparent",
+              letterSpacing: "0.02em",
+            }}
+          >
+            Select a block by clicking on it
+          </p>
+
+          {/* Grid + labels wrapper */}
+          <div
+            className="relative"
+            style={{
+              width: "min(92vw, 72vh, 840px)",
+              height: "min(92vw, 72vh, 840px)",
+              paddingLeft: "28px",
+              paddingTop: "28px",
+            }}
+          >
+            {/* Column labels (A–J) above the grid */}
+            <div
+              className="absolute top-0 left-[28px] right-0 grid z-10"
+              style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}
+            >
+              {COL_LABELS.map((label) => (
+                <span
+                  key={`col-${label}`}
+                  className="text-center text-[11px] font-bold tracking-wider"
+                  style={{ color: "rgba(66,44,25,0.78)", lineHeight: "28px" }}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            {/* Row labels (1–10) to the left of the grid */}
+            <div
+              className="absolute left-0 top-[28px] bottom-0 grid z-10"
+              style={{ gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`, width: "28px" }}
+            >
+              {Array.from({ length: GRID_SIZE }, (_, i) => (
+                <span
+                  key={`row-${i + 1}`}
+                  className="flex items-center justify-center text-[11px] font-bold tracking-wider"
+                  style={{ color: "rgba(66,44,25,0.78)" }}
+                >
+                  {i + 1}
+                </span>
+              ))}
+            </div>
+
+            {/* The grid itself */}
+            <MosaicGrid
+              blocks={blocks}
+              isColorMode={isColorMode}
+              selectedBlock={focusedBlock}
+              onBlockClick={openBlock}
+              onBlockHoverStart={handleBlockHoverStart}
+              onBlockHoverMove={handleBlockHoverMove}
+              onBlockHoverEnd={handleBlockHoverEnd}
+              className="w-full h-full"
+            />
+          </div>
 
         {hoverTooltip && !focusedBlock && (
           <div
@@ -1348,35 +1852,7 @@ export default function WebAppPage() {
           </div>
         )}
 
-        {/* Color toggle */}
-        <button
-          className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-xs font-bold tracking-wide transition-all"
-          style={{
-            background: "rgba(255,255,255,0.85)",
-            backdropFilter: "blur(14px)",
-            border: "1px solid rgba(61,45,19,0.08)",
-            color: "#21170d",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-          }}
-          onClick={() => setIsColorMode((v) => !v)}
-        >
-          Color
-          <div
-            className="w-[34px] h-[18px] rounded-full relative transition-colors"
-            style={{
-              background: isColorMode
-                ? "linear-gradient(135deg, #c96b1b, #e0b860)"
-                : "rgba(0,0,0,0.12)",
-            }}
-          >
-            <motion.div
-              className="w-[14px] h-[14px] rounded-full bg-white absolute top-[2px]"
-              style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }}
-              animate={{ left: isColorMode ? 18 : 2 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            />
-          </div>
-        </button>
+
       </motion.div>
 
       {/* Donor marquee (bottom) */}
@@ -1612,6 +2088,7 @@ export default function WebAppPage() {
                           background: "rgba(255,250,244,0.96)",
                           border: "1px solid rgba(222,182,131,0.36)",
                           color: "#2a1509",
+                          fontSize: "16px"
                         }}
                       />
                     </div>
@@ -1636,6 +2113,7 @@ export default function WebAppPage() {
                           background: "rgba(255,250,244,0.96)",
                           border: "1px solid rgba(222,182,131,0.36)",
                           color: "#2a1509",
+                          fontSize: "16px"
                         }}
                       />
                     </div>
@@ -1647,42 +2125,50 @@ export default function WebAppPage() {
                     Enter the name you want to inscribe and the quantity.
                   </p>
 
-                  <div className="flex gap-2">
-                    <select
-                      value={formPhoneCode}
-                      onChange={(e) => handlePhoneCodeChange(e.target.value)}
-                      className="w-24 px-1 py-2 rounded-lg text-xs outline-none"
-                      style={{
-                        background: "rgba(255,250,244,0.96)",
-                        border: "1px solid rgba(222,182,131,0.36)",
-                        color: "#2a1509",
-                      }}
+                  <div className="flex flex-col gap-1">
+                    <label
+                      className="text-[10px] font-bold tracking-wider uppercase"
+                      style={{ color: "rgba(255,230,198,0.85)" }}
                     >
-                      {COUNTRY_CODES.map(([c, code]) => (
-                        <option key={`p-${c}`} value={code}>
-                          {c} ({code})
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="tel"
-                      value={formPhone}
-                      onChange={(e) => handlePhoneChange(e.target.value)}
-                      maxLength={20}
-                      placeholder="Phone"
-                      className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
-                      style={{
-                        background: "rgba(255,250,244,0.96)",
-                        border: "1px solid rgba(222,182,131,0.36)",
-                        color: "#2a1509",
-                      }}
-                    />
+                      Indian Mobile Number
+                    </label>
+                    <div className="flex gap-2">
+                      <div
+                        className="flex items-center px-3 py-2 rounded-lg text-sm font-semibold select-none"
+                        style={{
+                          background: "rgba(220,200,170,0.55)",
+                          border: "1px solid rgba(222,182,131,0.36)",
+                          color: "#5a3a1a",
+                          whiteSpace: "nowrap",
+                          cursor: "default",
+                          userSelect: "none",
+                        }}
+                        title="India only (+91)"
+                      >
+                        +91
+                      </div>
+                      <input
+                        type="tel"
+                        value={formPhone}
+                        onChange={(e) => handlePhoneChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        maxLength={10}
+                        placeholder="10-digit mobile number"
+                        inputMode="numeric"
+                        className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                        style={{
+                          background: "rgba(255,250,244,0.96)",
+                          border: "1px solid rgba(222,182,131,0.36)",
+                          color: "#2a1509",
+                          fontSize: "16px"
+                        }}
+                      />
+                    </div>
                   </div>
                   <p
                     className="text-[11px]"
                     style={{ color: "rgba(245,232,216,0.72)" }}
                   >
-                    Please provide your primary contact number.
+                    Please provide your primary Indian mobile number (10 digits).
                   </p>
 
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1702,20 +2188,22 @@ export default function WebAppPage() {
 
                   {!formSamePhone && (
                     <>
+                      <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>WhatsApp Number</label>
                       <div className="flex gap-2">
                         <select
                           value={formWaCode}
                           onChange={(e) => setFormWaCode(e.target.value)}
-                          className="w-24 px-1 py-2 rounded-lg text-xs outline-none"
+                          className="w-28 px-1 py-2 rounded-lg text-xs outline-none"
                           style={{
                             background: "rgba(255,250,244,0.96)",
                             border: "1px solid rgba(222,182,131,0.36)",
                             color: "#2a1509",
+                            fontSize: "16px"
                           }}
                         >
-                          {COUNTRY_CODES.map(([c, code]) => (
-                            <option key={`w-${c}`} value={code}>
-                              {c} ({code})
+                          {COUNTRY_CODES.map((c) => (
+                            <option key={`w-${c.name}`} value={c.code}>
+                              {c.name} ({c.code})
                             </option>
                           ))}
                         </select>
@@ -1730,6 +2218,7 @@ export default function WebAppPage() {
                             background: "rgba(255,250,244,0.96)",
                             border: "1px solid rgba(222,182,131,0.36)",
                             color: "#2a1509",
+                            fontSize: "16px"
                           }}
                         />
                       </div>
@@ -1753,6 +2242,7 @@ export default function WebAppPage() {
                     </p>
                   )}
 
+                  <label className="text-[10px] font-bold tracking-wider uppercase" style={{ color: "rgba(255,230,198,0.85)" }}>Date of Birth</label>
                   <input
                     type="date"
                     value={formDob}
@@ -1763,6 +2253,7 @@ export default function WebAppPage() {
                       background: "rgba(255,250,244,0.96)",
                       border: "1px solid rgba(222,182,131,0.36)",
                       color: "#2a1509",
+                      fontSize: "16px"
                     }}
                   />
                   <p
@@ -1773,26 +2264,28 @@ export default function WebAppPage() {
                     communication.
                   </p>
 
-                  <input
-                    type="email"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    maxLength={80}
-                    placeholder="Email"
-                    className="px-3 py-2 rounded-lg text-sm outline-none"
-                    style={{
-                      background: "rgba(255,250,244,0.96)",
-                      border: "1px solid rgba(222,182,131,0.36)",
-                      color: "#2a1509",
-                    }}
-                  />
-                  <p
-                    className="text-[11px]"
-                    style={{ color: "rgba(245,232,216,0.72)" }}
-                  >
-                    Email is optional. Provide your email for further
-                    communication.
-                  </p>
+                  <div className="flex flex-col gap-1">
+                    <label
+                      className="text-[10px] font-bold tracking-wider uppercase"
+                      style={{ color: "rgba(255,230,198,0.85)" }}
+                    >
+                      Email <span style={{ color: "#f6a05a" }}>*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={formEmail}
+                      onChange={(e) => setFormEmail(e.target.value)}
+                      maxLength={80}
+                      placeholder="Email address (required)"
+                      className="px-3 py-2 rounded-lg text-sm outline-none"
+                      style={{
+                        background: "rgba(255,250,244,0.96)",
+                        border: "1px solid rgba(222,182,131,0.36)",
+                        color: "#2a1509",
+                        fontSize: "16px"
+                      }}
+                    />
+                  </div>
 
                   <div
                     className="flex justify-between items-center px-3 py-2 rounded-lg"
@@ -1815,34 +2308,50 @@ export default function WebAppPage() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
+                  <button
                       className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
                       style={{
-                        background: "linear-gradient(135deg, #c96b1b, #e0b860)",
-                        opacity: submitting ? 0.7 : 1,
+                        background: "linear-gradient(135deg, #2d6a4f, #52b788)",
+                        opacity: paymentLoading || submitting ? 0.7 : 1,
                       }}
-                      disabled={submitting}
-                      onClick={handleDonate}
+                      disabled={paymentLoading || submitting}
+                      onClick={() => void handlePayOnline()}
                     >
-                      {submitting ? "Processing..." : "Donate Now"}
+                      {paymentLoading ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />
+                          Redirecting
+                        </span>
+                      ) : (
+                        "Pay Online"
+                      )}
                     </button>
 
-                    <button
-                      className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
+                  {paymentError && (
+                    <div
+                      className="flex items-center gap-2 text-xs p-2 rounded-lg"
                       style={{
-                        background: "linear-gradient(135deg, #6b4326, #8f6138)",
-                        opacity: submitting ? 0.7 : 1,
-                      }}
-                      disabled={submitting}
-                      onClick={() => {
-                        setPledgeDays(null);
-                        setShowPledgeModal(true);
+                        background: "rgba(220,110,90,0.12)",
+                        border: "1px solid rgba(220,110,90,0.25)",
+                        color: "#ffd7d0",
                       }}
                     >
-                      Take a Pledge
-                    </button>
-                  </div>
+                      <p>{paymentError}</p>
+                      <button
+                        type="button"
+                        className="ml-auto px-2 py-1 rounded text-xs font-bold shrink-0"
+                        style={{
+                          background: "rgba(255,246,233,0.1)",
+                          border: "1px solid rgba(228,180,121,0.26)",
+                          color: "#ffe9cc",
+                        }}
+                        onClick={() => void handlePayOnline()}
+                        disabled={paymentLoading}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
 
                   {formStatus && (
                     <div
@@ -2007,18 +2516,6 @@ export default function WebAppPage() {
                             >
                               x{entry.qty}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => void handleDelete(entry.id)}
-                              className="w-7 h-7 rounded-md text-sm"
-                              style={{
-                                background: "rgba(220,110,90,0.18)",
-                                border: "1px solid rgba(220,110,90,0.35)",
-                                color: "#ffd7d0",
-                              }}
-                            >
-                              ×
-                            </button>
                           </div>
                         );
                       })
@@ -2097,7 +2594,7 @@ export default function WebAppPage() {
               </p>
 
               <div className="grid grid-cols-3 gap-2 mb-4">
-                {[25, 35, 45].map((d) => (
+                {[7, 15, 30].map((d) => (
                   <button
                     key={d}
                     type="button"
