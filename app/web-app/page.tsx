@@ -868,7 +868,7 @@ export default function WebAppPage() {
     // Build a hidden form and submit it directly to the payment gateway (form POST)
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = "https://test.birnagar.org/payment/initiate";
+    form.action = "https://birnagar.org/payment/initiate";
     form.style.display = "none";
 
     const fields: Record<string, string | number | boolean> = {
