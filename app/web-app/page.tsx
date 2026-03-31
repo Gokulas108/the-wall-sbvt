@@ -190,24 +190,6 @@ const COL_LABELS = Array.from({ length: GRID_SIZE }, (_, i) =>
   String.fromCharCode(65 + i)
 );
 
-/** Client-side HMAC-SHA256 using Web Crypto — returns lowercase hex string */
-async function hmacSha256(data: string, secret: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-const KEY_SALT = process.env.NEXT_PUBLIC_PAYMENT_KEY_SALT ?? "";
-
 export default function WebAppPage() {
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -883,7 +865,7 @@ export default function WebAppPage() {
           amount: payAmount,
         }),
       });
-      const prepData = await prepRes.json() as { success: boolean; token?: string; ts?: number; error?: string };
+      const prepData = await prepRes.json() as { success: boolean; token?: string; ts?: number; key_hash?: string; error?: string };
       if (!prepData.success || !prepData.token) {
         const msg = prepData.error ?? "Could not initiate payment. Please try again.";
         setPaymentError(msg);
@@ -891,14 +873,18 @@ export default function WebAppPage() {
         return;
       }
 
-      // 2. Generate a per-session random key, hash it, and bind it to this payment.
-      //    Raw key → stored in sessionStorage (never sent anywhere)
-      //    Hashed key → sent in URL with 'api_' prefix so gateway echoes it back
-      //    Result page rehashes the raw key and compares → ensures session continuity
+      // 2. Generate a per-session rawKey client-side.
+      //    Send it to /api/payment/prepare which hashes it server-side with the secret.
+      //    We get back key_hash — the secret NEVER touches the client.
       const rawKey = `${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-      const hashedKey = await hmacSha256(rawKey, KEY_SALT);
+      if (!prepData.key_hash) {
+        const msg = "Could not generate session key. Please try again.";
+        setPaymentError(msg);
+        setFormStatus(msg);
+        return;
+      }
 
-      // 3. Save pending payment data (raw key inside, NOT the hash)
+      // 3. Save pending payment data (raw key stored here, NOT the hash)
       const pendingData = {
         block_id: focusedBlock,
         name: donorName,
@@ -911,19 +897,19 @@ export default function WebAppPage() {
         // Server HMAC token fields (verified by /api/payment/confirm)
         _token: prepData.token,
         _ts: prepData.ts,
-        // Client session-continuity key (raw — hashed copy goes in the URL)
+        // Raw key for session-continuity — hashed copy goes in the URL
         api_key: rawKey,
       };
       sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
 
-      // 4. Redirect — send hashed key with 'api_' prefix so gateway echoes it back
+      // 4. Redirect — send server-computed hash with 'api_' prefix
       const params = new URLSearchParams({
         name: donorName,
         email: formEmail.trim(),
         mobile: phone,
         amount: String(payAmount),
         api: "1",
-        api_key: `api_${hashedKey}`,
+        api_key: `api_${prepData.key_hash}`,
       }).toString();
 
       window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;

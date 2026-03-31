@@ -5,24 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatINR } from "@/lib/mosaic/engine";
 
-/** Client-side HMAC-SHA256 — same helper as in web-app/page.tsx */
-async function hmacSha256(data: string, secret: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-const KEY_SALT = process.env.NEXT_PUBLIC_PAYMENT_KEY_SALT ?? "";
-
 type PendingPaymentData = {
   block_id: string;
   name: string;
@@ -115,12 +97,11 @@ function PaymentResultContent() {
     setSaving(true);
     setSaveError("");
 
-    // ── Client-side api_key verification ────────────────────────────────────────
-    // 1. Strip 'api_' prefix from the URL param to get the raw received hash
+    // Extract the hash from the URL (strip 'api_' prefix) and rawKey from sessionStorage.
+    // Both are passed to /api/payment/confirm which re-hashes server-side and compares.
     const receivedHash = apiKeyParam?.startsWith("api_")
       ? apiKeyParam.slice(4)
       : null;
-    // 2. Get the raw key stored in sessionStorage during initiation
     const rawKey = (pendingData as Record<string, unknown>).api_key as string | undefined;
 
     if (!receivedHash || !rawKey) {
@@ -131,25 +112,8 @@ function PaymentResultContent() {
       return;
     }
 
-    // 3. Rehash the raw key with the same salt and compare
-    let expectedHash: string;
-    try {
-      expectedHash = await hmacSha256(rawKey, KEY_SALT);
-    } catch {
-      setSaveError("Could not verify payment session. Please contact support.");
-      setSaving(false);
-      setSavedDone(true);
-      return;
-    }
 
-    if (expectedHash !== receivedHash) {
-      // Keys don’t match — this is either a replayed URL or tampered param
-      setSaveError("Payment session mismatch. This transaction cannot be recorded. Please start a new payment.");
-      setSaving(false);
-      setSavedDone(true);
-      sessionStorage.removeItem("kirtan-pending-payment");
-      return;
-    }
+
     // ── Verification passed ─────────────────────────────────────────────────
     try {
       const res = await fetch("/api/payment/confirm", {
@@ -158,6 +122,9 @@ function PaymentResultContent() {
         body: JSON.stringify({
           ...pendingData,
           txn_id: txnID,
+          // Pass rawKey + hash to confirm — server re-hashes and verifies
+          api_key: rawKey,
+          api_key_hash: receivedHash,
         }),
       });
       const data = await res.json();
