@@ -852,6 +852,7 @@ export default function WebAppPage() {
     setPaymentError("");
     setFormStatus("");
 
+    let redirecting = false;
     try {
       // 1. Generate the per-session rawKey first — it must be sent to the server
       //    so the server can hash it (HMAC) and return key_hash.
@@ -910,12 +911,15 @@ export default function WebAppPage() {
         api_key: `api_${prepData.key_hash}`,
       }).toString();
 
-      window.location.href = `https://test.birnagar.org/payment/redirect-to-gateway?${params}`;
+      // Keep the spinner running until the browser has navigated away
+      redirecting = true;
+      window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
     } catch {
       setPaymentError("Network error. Please check your connection and try again.");
       setFormStatus("Network error. Please check your connection and try again.");
     } finally {
-      setPaymentLoading(false);
+      // Only stop loading if we didn't redirect — otherwise keep spinner until page leaves
+      if (!redirecting) setPaymentLoading(false);
     }
   }
 
