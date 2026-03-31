@@ -853,9 +853,11 @@ export default function WebAppPage() {
     setFormStatus("");
 
     try {
-      // 1. Get a server-signed HMAC token before redirecting.
-      //    This ties the payment attempt to our server — no one can save
-      //    to the DB without a valid token generated here.
+      // 1. Generate the per-session rawKey first — it must be sent to the server
+      //    so the server can hash it (HMAC) and return key_hash.
+      //    The secret NEVER touches the client; only the hash comes back.
+      const rawKey = `${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+
       const prepRes = await fetch("/api/payment/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -863,6 +865,7 @@ export default function WebAppPage() {
           block_id: focusedBlock,
           name: donorName,
           amount: payAmount,
+          raw_key: rawKey,           // ← sent to server for hashing
         }),
       });
       const prepData = await prepRes.json() as { success: boolean; token?: string; ts?: number; key_hash?: string; error?: string };
@@ -872,11 +875,6 @@ export default function WebAppPage() {
         setFormStatus(msg);
         return;
       }
-
-      // 2. Generate a per-session rawKey client-side.
-      //    Send it to /api/payment/prepare which hashes it server-side with the secret.
-      //    We get back key_hash — the secret NEVER touches the client.
-      const rawKey = `${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
       if (!prepData.key_hash) {
         const msg = "Could not generate session key. Please try again.";
         setPaymentError(msg);
@@ -912,7 +910,7 @@ export default function WebAppPage() {
         api_key: `api_${prepData.key_hash}`,
       }).toString();
 
-      window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
+      window.location.href = `https://test.birnagar.org/payment/redirect-to-gateway?${params}`;
     } catch {
       setPaymentError("Network error. Please check your connection and try again.");
       setFormStatus("Network error. Please check your connection and try again.");
