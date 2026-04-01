@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     serial_number: submission.serialNumber ?? `ONL-${submission.blockId}-${submission.id}`,
     cross_check_ref: `${submission.blockId}-${submission.id}`,
     submission_id: submission.id,
-    allocations: [{ block_id: submission.blockId, qty: submission.qty }],
+    allocations: [{ block_id: submission.blockId, qty: submission.qty, amount }],
     name: submission.name,
     qty: submission.qty,
     amount,
