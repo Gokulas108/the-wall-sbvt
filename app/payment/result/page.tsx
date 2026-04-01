@@ -5,34 +5,24 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatINR } from "@/lib/mosaic/engine";
 
-type PendingPaymentData = {
-  block_id: string;
-  name: string;
-  qty: number;
-  date_of_birth?: string;
-  email?: string;
-  phone: string;
-  whatsapp: string;
-  amount: number;
-};
-
 type ReceiptData = {
-  trust_name: string;
+  trust_name?: string;
   serial_number: string;
-  action_type: string;
-  donor_name: string;
+  action_type?: string;
+  donor_name?: string;
+  name?: string;          // returned by result-lookup route
   qty: number;
-  total_amount: number;
+  total_amount?: number;
   phone?: string;
   whatsapp?: string;
   email?: string;
   created_at: string;
-  block_id: string;
+  block_id?: string;
   txn_id?: string;
   allocations: Array<{
     block_id: string;
     qty: number;
-    amount: number;
+    amount?: number;
     serial_number?: string;
   }>;
 };
@@ -59,99 +49,67 @@ function PaymentResultContent() {
   const txnID = searchParams.get("txnID");
   const amount = searchParams.get("amount");
   const message = searchParams.get("message");
-  // api_key from gateway — format: "api_<hmac-sha256-of-raw-key>"
-  const apiKeyParam = searchParams.get("api_key");
 
   const isSuccess = status === "success";
   const isFailed = status === "failed" || status === "failure";
-  // Also treat missing api_key as invalid on success
-  const isInvalid = !status || !txnID || !amount || (isSuccess && !apiKeyParam);
+  const isInvalid = !status || !txnID || !amount;
 
-  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [savedDone, setSavedDone] = useState(false);
-  const saveAttemptedRef = useRef(false);
-
-  // Read pending payment data from sessionStorage
-  const pendingData = useMemo<PendingPaymentData | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = sessionStorage.getItem("kirtan-pending-payment");
-      if (!raw) return null;
-      return JSON.parse(raw) as PendingPaymentData;
-    } catch {
-      return null;
-    }
-  }, []);
+  const lookupAttemptedRef = useRef(false);
 
   const totalAssigned = useMemo(() => {
     if (!receipt) return 0;
     return receipt.allocations.reduce((sum, item) => sum + item.qty, 0);
   }, [receipt]);
 
-  // Save donor record on successful payment
-  const saveDonorRecord = useCallback(async () => {
-    if (!pendingData || !txnID || saveAttemptedRef.current) return;
-    saveAttemptedRef.current = true;
-    setSaving(true);
+  // On success: poll the DB to see if the webhook has completed this transaction
+  const lookupDonorRecord = useCallback(async () => {
+    if (!txnID || lookupAttemptedRef.current) return;
+    lookupAttemptedRef.current = true;
+    setChecking(true);
     setSaveError("");
 
-    // Extract the hash from the URL (strip 'api_' prefix) and rawKey from sessionStorage.
-    // Both are passed to /api/payment/confirm which re-hashes server-side and compares.
-    const receivedHash = apiKeyParam?.startsWith("api_")
-      ? apiKeyParam.slice(4)
-      : null;
-    const rawKey = (pendingData as Record<string, unknown>).api_key as string | undefined;
+    // Poll up to ~10s for the webhook to complete (S2S may arrive slightly after redirect)
+    const POLL_INTERVAL = 1500;
+    const MAX_ATTEMPTS = 7;
 
-    if (!receivedHash || !rawKey) {
-      setSaveError("Payment session could not be verified. Please contact support.");
-      setSaving(false);
-      setSavedDone(true);
-      sessionStorage.removeItem("kirtan-pending-payment");
-      return;
-    }
-
-
-
-    // ── Verification passed ─────────────────────────────────────────────────
-    try {
-      const res = await fetch("/api/payment/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...pendingData,
-          txn_id: txnID,
-          // Pass rawKey + hash to confirm — server re-hashes and verifies
-          api_key: rawKey,
-          api_key_hash: receivedHash,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.receipt) {
-        setReceipt(data.receipt);
-        // Clear pending data from sessionStorage
-        sessionStorage.removeItem("kirtan-pending-payment");
-      } else {
-        setSaveError(data.error || "Failed to save donation record.");
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(`/api/payment/result-lookup?txnID=${encodeURIComponent(txnID)}`);
+        const data = await res.json() as { found: boolean; receipt?: ReceiptData; error?: string };
+        if (data.found && data.receipt) {
+          setReceipt(data.receipt);
+          setChecking(false);
+          setSavedDone(true);
+          // Clear any leftover sessionStorage from old flow
+          if (typeof window !== "undefined") sessionStorage.removeItem("kirtan-pending-payment");
+          return;
+        }
+      } catch {
+        // Network hiccup — keep polling
       }
-    } catch {
-      setSaveError("Network error. Your payment was successful but we couldn't save the record. Please contact support.");
-    } finally {
-      setSaving(false);
-      setSavedDone(true);
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+      }
     }
-  }, [pendingData, txnID]);
+
+    setSaveError("Your payment was received but the record is taking longer than expected to appear. Please contact support with your transaction ID.");
+    setChecking(false);
+    setSavedDone(true);
+  }, [txnID]);
 
   useEffect(() => {
-    if (isSuccess && !isInvalid && pendingData && !savedDone) {
-      void saveDonorRecord();
+    if (isSuccess && !isInvalid && !savedDone) {
+      void lookupDonorRecord();
     }
-    // Clear stale sessionStorage on failure or invalid — nothing to save
+    // Clear stale sessionStorage on failure or invalid
     if ((isFailed || isInvalid) && typeof window !== "undefined") {
       sessionStorage.removeItem("kirtan-pending-payment");
     }
-  }, [isSuccess, isFailed, isInvalid, pendingData, savedDone, saveDonorRecord]);
+  }, [isSuccess, isFailed, isInvalid, savedDone, lookupDonorRecord]);
 
   const parsedAmount = parseFloat(amount || "0");
 
@@ -248,8 +206,8 @@ function PaymentResultContent() {
 
   // ───── Success State ─────
   if (isSuccess) {
-    // Show saving spinner while confirming
-    if (saving) {
+    // Show spinner while polling for webhook completion
+    if (checking) {
       return (
         <div
           className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6"
@@ -281,7 +239,7 @@ function PaymentResultContent() {
                 Payment Successful!
               </h1>
               <p className="text-sm" style={{ color: "rgba(245,232,216,0.9)" }}>
-                Saving your donation record... Please wait.
+                Confirming your donation record... Please wait.
               </p>
             </div>
           </div>
@@ -346,7 +304,7 @@ function PaymentResultContent() {
               borderBottom: "1px solid rgba(228,180,121,0.22)",
             }}
           >
-            {receipt?.donor_name || pendingData?.name || "Donor"}
+            {receipt?.donor_name || receipt?.name || "Donor"}
           </h2>
           <h1
             className="text-2xl sm:text-3xl font-bold mt-2"
@@ -376,7 +334,7 @@ function PaymentResultContent() {
               <button
                 type="button"
                 onClick={() => {
-                  saveAttemptedRef.current = false;
+                  lookupAttemptedRef.current = false;
                   setSavedDone(false);
                 }}
                 className="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold"
@@ -394,7 +352,7 @@ function PaymentResultContent() {
           <div className="grid sm:grid-cols-2 gap-3 mt-5">
             <Info
               label="Donor"
-              value={receipt?.donor_name || pendingData?.name || "—"}
+              value={receipt?.donor_name || receipt?.name || "—"}
             />
             <Info
               label="Date"
@@ -410,17 +368,17 @@ function PaymentResultContent() {
             <Info label="Transaction ID" value={txnID || "—"} />
             <Info
               label="Total Names"
-              value={`${receipt?.qty || pendingData?.qty || "—"}`}
+              value={`${receipt?.qty || "—"}`}
             />
             <Info
               label="Total Amount"
               value={`₹${formatINR(receipt?.total_amount || parsedAmount)}`}
             />
             <Info label="Payment Method" value="Online Payment" />
-            {(receipt?.block_id || pendingData?.block_id) && (
+            {receipt?.block_id && (
               <Info
                 label="Block"
-                value={receipt?.block_id || pendingData?.block_id || "—"}
+                value={receipt.block_id}
               />
             )}
             {receipt?.phone && <Info label="Phone" value={receipt.phone} />}
@@ -491,7 +449,7 @@ function PaymentResultContent() {
                           className="text-right px-3 py-2"
                           style={{ color: "#ffd79c" }}
                         >
-                          ₹{formatINR(alloc.amount)}
+                          ₹{formatINR(alloc.amount ?? 0)}
                         </td>
                       </tr>
                     ))}

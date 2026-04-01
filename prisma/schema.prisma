@@ -92,3 +92,24 @@ model CashSettlement {
   @@index([adminId])
   @@map("cash_settlements")
 }
+
+model PendingTransaction {
+  id          Int       @id @default(autoincrement())
+  apiKey      String    @unique @map("api_key")
+  blockId     String    @map("block_id")
+  name        String
+  qty         Int       @default(1)
+  dateOfBirth String    @default("") @map("date_of_birth")
+  email       String    @default("")
+  phone       String
+  whatsapp    String
+  amount      Int
+  status      String    @default("pending") // pending | completed | failed
+  txnId       String?   @map("txn_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([apiKey])
+  @@index([status])
+  @@map("pending_transactions")
+}

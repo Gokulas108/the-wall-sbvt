@@ -854,71 +854,54 @@ export default function WebAppPage() {
 
     let redirecting = false;
     try {
-      // 1. Generate the per-session rawKey first — it must be sent to the server
-      //    so the server can hash it (HMAC) and return key_hash.
-      //    The secret NEVER touches the client; only the hash comes back.
-      const rawKey = `${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-
-      const prepRes = await fetch("/api/payment/prepare", {
+      // Save donor intent to DB and get back the api_key_hash for the redirect URL.
+      // The raw api_key is stored in the DB row — the webhook will use it to
+      // look up and complete the transaction after payment.
+      const pendingRes = await fetch("/api/payment/pending", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           block_id: focusedBlock,
           name: donorName,
+          qty: qtyNumber,
+          date_of_birth: formDob,
+          email: formEmail.trim(),
+          phone: `${formPhoneCode} ${phone}`,
+          whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
           amount: payAmount,
-          raw_key: rawKey,           // ← sent to server for hashing
         }),
       });
-      const prepData = await prepRes.json() as { success: boolean; token?: string; ts?: number; key_hash?: string; error?: string };
-      if (!prepData.success || !prepData.token) {
-        const msg = prepData.error ?? "Could not initiate payment. Please try again.";
-        setPaymentError(msg);
-        setFormStatus(msg);
-        return;
-      }
-      if (!prepData.key_hash) {
-        const msg = "Could not generate session key. Please try again.";
-        setPaymentError(msg);
-        setFormStatus(msg);
-        return;
-      }
-
-      // 3. Save pending payment data (raw key stored here, NOT the hash)
-      const pendingData = {
-        block_id: focusedBlock,
-        name: donorName,
-        qty: qtyNumber,
-        date_of_birth: formDob,
-        email: formEmail.trim(),
-        phone: `${formPhoneCode} ${phone}`,
-        whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
-        amount: payAmount,
-        // Server HMAC token fields (verified by /api/payment/confirm)
-        _token: prepData.token,
-        _ts: prepData.ts,
-        // Raw key for session-continuity — hashed copy goes in the URL
-        api_key: rawKey,
+      const pendingData = await pendingRes.json() as {
+        success: boolean;
+        api_key?: string;
+        api_key_hash?: string;
+        error?: string;
       };
-      sessionStorage.setItem("kirtan-pending-payment", JSON.stringify(pendingData));
 
-      // 4. Redirect — send server-computed hash with 'api_' prefix
+      if (!pendingData.success || !pendingData.api_key_hash) {
+        const msg = pendingData.error ?? "Could not initiate payment. Please try again.";
+        setPaymentError(msg);
+        setFormStatus(msg);
+        return;
+      }
+
+      // Redirect — send hashed key with 'api_' prefix so gateway echoes it back to webhook
       const params = new URLSearchParams({
         name: donorName,
         email: formEmail.trim(),
         mobile: phone,
         amount: String(payAmount),
         api: "1",
-        api_key: `api_${prepData.key_hash}`,
+        api_key: `api_${pendingData.api_key_hash}`,
       }).toString();
 
-      // Keep the spinner running until the browser has navigated away
+      // Keep spinner active until browser navigates away
       redirecting = true;
       window.location.href = `https://birnagar.org/payment/redirect-to-gateway?${params}`;
     } catch {
       setPaymentError("Network error. Please check your connection and try again.");
       setFormStatus("Network error. Please check your connection and try again.");
     } finally {
-      // Only stop loading if we didn't redirect — otherwise keep spinner until page leaves
       if (!redirecting) setPaymentLoading(false);
     }
   }
