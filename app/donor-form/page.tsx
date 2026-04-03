@@ -66,8 +66,9 @@ export default function DonorFormPage() {
   const [showPledgeModal, setShowPledgeModal] = useState(false);
   const [pledgeDays, setPledgeDays] = useState<number | null>(null);
   const [showDonatePaymentModal, setShowDonatePaymentModal] = useState(false);
+  const [showCashConfirmModal, setShowCashConfirmModal] = useState(false);
   const [donationPaymentMethod, setDonationPaymentMethod] =
-    useState<DonationPaymentMethod>("cash");
+    useState<DonationPaymentMethod>("upi");
   const [donationPaymentReference, setDonationPaymentReference] = useState("");
 
   // Auto-assign block if not selected
@@ -384,10 +385,9 @@ export default function DonorFormPage() {
       const digits = phone.replace(/\D/g, "").length;
       if (digits < phCountry.min || digits > phCountry.max) {
         setStatus(
-          `Mobile number must be ${
-            phCountry.min === phCountry.max
-              ? phCountry.min
-              : `${phCountry.min}-${phCountry.max}`
+          `Mobile number must be ${phCountry.min === phCountry.max
+            ? phCountry.min
+            : `${phCountry.min}-${phCountry.max}`
           } digits for ${phCountry.name}.`
         );
         return;
@@ -410,10 +410,9 @@ export default function DonorFormPage() {
         const digits = whatsappVal.replace(/\D/g, "").length;
         if (digits < waCountry.min || digits > waCountry.max) {
           setStatus(
-            `WhatsApp number must be ${
-              waCountry.min === waCountry.max
-                ? waCountry.min
-                : `${waCountry.min}-${waCountry.max}`
+            `WhatsApp number must be ${waCountry.min === waCountry.max
+              ? waCountry.min
+              : `${waCountry.min}-${waCountry.max}`
             } digits for ${waCountry.name}.`
           );
           return;
@@ -438,6 +437,8 @@ export default function DonorFormPage() {
     }
 
     // Guard 2: Re-verify the session server-side in case it expired mid-session
+    setSubmitting(true);
+    setStatus("Processing...");
     try {
       const meRes = await fetch("/api/donor-form/me", { cache: "no-store" });
       if (!meRes.ok) {
@@ -445,6 +446,7 @@ export default function DonorFormPage() {
         setAuthUser(null);
         setIsAuthorized(false);
         setStatus("Your session has expired. Please log in again to submit.");
+        setSubmitting(false);
         return;
       }
       const meData = (await meRes.json()) as { user?: AuthUser };
@@ -452,18 +454,17 @@ export default function DonorFormPage() {
         setAuthUser(null);
         setIsAuthorized(false);
         setStatus("Your session has expired. Please log in again to submit.");
+        setSubmitting(false);
         return;
       }
       // Refresh local authUser with the latest server state (e.g. updated totals)
       setAuthUser(meData.user);
     } catch {
       setStatus("Could not verify session. Please check your connection and try again.");
+      setSubmitting(false);
       return;
     }
     // ── End auth guard ────────────────────────────────────────────────────────
-
-    setSubmitting(true);
-    setStatus("Processing...");
 
     const payloadBase: Record<string, unknown> = {
       name: name.trim(),
@@ -527,7 +528,8 @@ export default function DonorFormPage() {
       setPledgeDays(null);
       setShowPledgeModal(false);
       setShowDonatePaymentModal(false);
-      setDonationPaymentMethod("cash");
+      setShowCashConfirmModal(false);
+      setDonationPaymentMethod("upi");
       setDonationPaymentReference("");
     } catch {
       setStatus("Network error. Please try again.");
@@ -1091,8 +1093,8 @@ export default function DonorFormPage() {
                     background: "linear-gradient(135deg, #c96b1b, #e0b860)",
                     opacity:
                       submitting ||
-                      (donationPaymentMethod === "upi" &&
-                        !donationPaymentReference.trim())
+                        (donationPaymentMethod === "upi" &&
+                          !donationPaymentReference.trim())
                         ? 0.65
                         : 1,
                   }}
@@ -1101,16 +1103,104 @@ export default function DonorFormPage() {
                     (donationPaymentMethod === "upi" &&
                       !donationPaymentReference.trim())
                   }
-                  onClick={() =>
+                  onClick={() => {
+                    if (donationPaymentMethod === "cash") {
+                      setShowDonatePaymentModal(false);
+                      setShowCashConfirmModal(true);
+                      return;
+                    }
                     void handleSubmit(
                       "donate",
                       undefined,
                       donationPaymentMethod,
                       donationPaymentReference,
-                    )
-                  }
+                    );
+                  }}
                 >
                   {submitting ? "Processing..." : "Continue"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Cash Confirm Modal */}
+      <AnimatePresence>
+        {showCashConfirmModal && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+            style={{
+              background: "rgba(14,7,4,0.7)",
+              backdropFilter: "blur(8px)",
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowCashConfirmModal(false)}
+          >
+            <motion.div
+              className="w-full max-w-md p-5 sm:p-6 rounded-2xl"
+              style={{
+                background:
+                  "linear-gradient(145deg, #2a150b, #3c1f0f 52%, #4a2610)",
+                border: "1px solid rgba(228,180,121,0.35)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.46)",
+              }}
+              initial={{ scale: 0.92, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: -10 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                className="text-xl font-bold mb-2"
+                style={{
+                  fontFamily: '"Cinzel", Georgia, serif',
+                  color: "#fff4e3",
+                }}
+              >
+                Confirm Cash Payment
+              </h3>
+              <p
+                className="text-sm mb-6 leading-relaxed"
+                style={{ color: "rgba(244,224,197,0.86)" }}
+              >
+                Make sure the donor has <strong className="text-base" style={{ color: "#fff5e7", fontWeight: 800 }}>Rs {totalAmount}/-</strong> or equivalent in cash before proceeding.
+              </p>
+
+              {status && (
+                <p className="text-sm mb-3" style={{ color: "#f6d8af" }}>
+                  {status}
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 py-2.5 rounded-xl font-semibold"
+                  style={{
+                    background: "rgba(255,246,233,0.1)",
+                    border: "1px solid rgba(228,180,121,0.2)",
+                    color: "#ffe9cc",
+                  }}
+                  onClick={() => {
+                    setShowCashConfirmModal(false);
+                    setShowDonatePaymentModal(true);
+                  }}
+                >
+                  Go Back
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 py-2.5 rounded-xl font-bold text-white"
+                  style={{
+                    background: "linear-gradient(135deg, #c96b1b, #e0b860)",
+                    opacity: submitting ? 0.65 : 1,
+                  }}
+                  disabled={submitting}
+                  onClick={() => void handleSubmit("donate", undefined, "cash")}
+                >
+                  {submitting ? "Processing..." : "Confirm"}
                 </button>
               </div>
             </motion.div>
@@ -1515,7 +1605,7 @@ export default function DonorFormPage() {
               disabled={submitting}
               onClick={() => {
                 setStatus("");
-                setDonationPaymentMethod("cash");
+                setDonationPaymentMethod("upi");
                 setDonationPaymentReference("");
                 setShowDonatePaymentModal(true);
               }}
