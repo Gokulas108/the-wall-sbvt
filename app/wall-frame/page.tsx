@@ -2014,6 +2014,7 @@ export default function WallFramePage() {
               >
                 Click Here to Change block or view Wall of Legacy
               </button>
+              // button
             )}
             {/* Single block canvas — only shown when a name is in focus */}
             {highlightName && (
