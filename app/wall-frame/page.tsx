@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { WallFrame } from "@/components/mosaic/WallFrame";
 import { LoadingScreen } from "@/components/shared/LoadingScreen";
 import { useBlockData } from "@/hooks/useBlockData";
-import { formatINR, COST_PER_NAME, NAMES_PER_BLOCK, GRID_SIZE, BlockData } from "@/lib/mosaic/engine";
+import { formatINR, COST_PER_NAME, GRID_SIZE, BlockData } from "@/lib/mosaic/engine";
 import { motion, AnimatePresence } from "framer-motion";
 import { COUNTRY_CODES } from "@/app/donor-form/countries";
 
@@ -34,46 +33,6 @@ const CornerOrnament = ({ className }: { className?: string }) => (
   </svg>
 );
 
-function normalizeName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function levenshteinDistance(a: string, b: string): number {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  const rows = a.length + 1, cols = b.length + 1;
-  const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
-  for (let i = 0; i < rows; i++) dp[i][0] = i;
-  for (let j = 0; j < cols; j++) dp[0][j] = j;
-  for (let i = 1; i < rows; i++) for (let j = 1; j < cols; j++) {
-    const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-    dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-  }
-  return dp[a.length][b.length];
-}
-
-function isSimilarName(name: string, query: string): boolean {
-  const n = normalizeName(name), q = normalizeName(query);
-  if (!q) return true;
-  if (n.includes(q) || q.includes(n)) return true;
-  const nameTokens = n.split(" "), queryTokens = q.split(" ");
-  if (queryTokens.some(t => nameTokens.some(nt => nt.includes(t)))) return true;
-  const cn = n.replace(/\s/g, ""), cq = q.replace(/\s/g, "");
-  const d = levenshteinDistance(cn, cq);
-  const threshold = cq.length <= 5 ? 1 : cq.length <= 9 ? 2 : 3;
-  return d <= threshold;
-}
-
-function buildSharedSerial(actionType: "donate" | "pledge", primaryBlockId: string): string {
-  const prefix = actionType === "pledge" ? "PLG" : "DON";
-  const base = (Date.now() + Math.floor(Math.random() * 1000)) % 1_000_000;
-  const suffix = String(base).padStart(6, "0");
-  return `${prefix}-${primaryBlockId.toUpperCase()}-${suffix}`;
-}
-
-type BlockCapacity = { id: string; remaining: number };
-
 type SearchItem = {
   kind: "name" | "phone" | "serial";
   label: string;
@@ -85,8 +44,7 @@ type SearchItem = {
 };
 
 export default function WallFramePage() {
-  const router = useRouter();
-  const { blocks, loading, fetchBlock, submitDonation } = useBlockData();
+  const { blocks, loading, fetchBlock } = useBlockData();
   const [ready, setReady] = useState(false);
   const [focusedBlock, setFocusedBlock] = useState<string | null>(null);
   const [focusData, setFocusData] = useState<BlockData | null>(null);
@@ -104,6 +62,9 @@ export default function WallFramePage() {
     }
   }, []);
 
+  const deepLinkHandledRef = useRef(false);
+  const [viaSerialDeepLink, setViaSerialDeepLink] = useState(false);
+
   // Form state
   const [formName, setFormName] = useState("");
   const [formQtyInput, setFormQtyInput] = useState("1");
@@ -115,15 +76,12 @@ export default function WallFramePage() {
   const [formWa, setFormWa] = useState("");
   const [formSamePhone, setFormSamePhone] = useState(false);
   const [formStatus, setFormStatus] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [blockSwitching, setBlockSwitching] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
 
   // Name search state
-  const [nameSearchQuery, setNameSearchQuery] = useState("");
-  const [nameFilterQuery, setNameFilterQuery] = useState("");
   const [highlightName, setHighlightName] = useState<string | null>(null);
 
   // Inscription submissions for the highlighted name
@@ -170,18 +128,6 @@ export default function WallFramePage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchSubmitted, setSearchSubmitted] = useState(false);
   const [searchMeta, setSearchMeta] = useState(SEARCH_PLACEHOLDER_META);
-
-  const applyNameSearch = useCallback(() => {
-    const q = nameSearchQuery.trim();
-    setNameFilterQuery(q);
-    setHighlightName(q || null);
-  }, [nameSearchQuery]);
-
-  const clearNameSearch = useCallback(() => {
-    setNameSearchQuery("");
-    setNameFilterQuery("");
-    setHighlightName(null);
-  }, []);
 
   const runSearch = useCallback(async () => {
     const query = searchQuery.trim();
@@ -250,15 +196,7 @@ export default function WallFramePage() {
     setFormStatus("");
     setPaymentError("");
     const trimmedTarget = targetName?.trim();
-    if (trimmedTarget) {
-      setNameSearchQuery(trimmedTarget);
-      setNameFilterQuery(trimmedTarget);
-      setHighlightName(trimmedTarget);
-    } else {
-      setNameSearchQuery("");
-      setNameFilterQuery("");
-      setHighlightName(null);
-    }
+    setHighlightName(trimmedTarget || null);
     const cached = blocks.get(id);
     if (cached) {
       // Cached data is kept fresh via SSE; no need to refetch (which would force a full canvas redraw).
@@ -275,6 +213,40 @@ export default function WallFramePage() {
 
   useEffect(() => { openBlockRef.current = (id) => { void openBlock(id); }; }, [openBlock]);
 
+  // Deep-link: open focused-name view from ?serial=… (or ?name=…&block=…)
+  useEffect(() => {
+    if (loading || deepLinkHandledRef.current) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const serial = params.get('serial')?.trim();
+    const nameParam = params.get('name')?.trim();
+    const blockParam = params.get('block')?.trim();
+    if (!serial && !(nameParam && blockParam)) return;
+    deepLinkHandledRef.current = true;
+    searchModeRef.current = true;
+    autoSelectedRef.current = true;
+    autoMobileSelectedRef.current = true;
+    (async () => {
+      try {
+        if (serial) {
+          const res = await fetch(`/api/search?q=${encodeURIComponent(serial)}`);
+          const data = (await res.json()) as { results?: SearchItem[] };
+          const hit = (data.results ?? []).find(r => r.serial_number?.toLowerCase() === serial.toLowerCase()) ?? (data.results ?? [])[0];
+          if (hit?.block_id && hit.label) {
+            setViaSerialDeepLink(true);
+            await openBlock(hit.block_id, hit.label);
+            return;
+          }
+        }
+        if (nameParam && blockParam) {
+          await openBlock(blockParam.toUpperCase(), nameParam);
+        }
+      } catch {
+        // silent — user can still search manually
+      }
+    })();
+  }, [loading, openBlock]);
+
   const closeBlock = useCallback(() => {
     setFocusedBlock(null);
     setFocusData(null);
@@ -287,51 +259,21 @@ export default function WallFramePage() {
     setFormWa("");
     setFormSamePhone(false);
     setPaymentError("");
-    setNameSearchQuery("");
-    setNameFilterQuery("");
     setHighlightName(null);
     setSearchQuery("");
     setSearchResults([]);
     setSearchSubmitted(false);
     setSearchMeta(SEARCH_PLACEHOLDER_META);
+    setViaSerialDeepLink(false);
   }, []);
 
   const backToSearch = useCallback(() => {
     setFocusedBlock(null);
     setFocusData(null);
     setHighlightName(null);
-    setNameSearchQuery("");
-    setNameFilterQuery("");
     setFormStatus("");
     setPaymentError("");
-  }, []);
-
-  const fetchCapacities = useCallback(async (): Promise<BlockCapacity[]> => {
-    const res = await fetch("/api/blocks");
-    const data = (await res.json()) as Record<string, { total_qty: number }>;
-    const capacities: BlockCapacity[] = [];
-    for (let r = 0; r < GRID_SIZE; r++) {
-      for (let c = 0; c < GRID_SIZE; c++) {
-        const id = String.fromCharCode(65 + c) + (r + 1);
-        const used = data[id]?.total_qty ?? 0;
-        const remaining = Math.max(0, NAMES_PER_BLOCK - used);
-        if (remaining > 0) capacities.push({ id, remaining });
-      }
-    }
-    return capacities;
-  }, []);
-
-  const buildAllocationPlan = useCallback((capacities: BlockCapacity[], requestedQty: number, preferredBlockId?: string) => {
-    const totalRemaining = capacities.reduce((sum, b) => sum + b.remaining, 0);
-    if (totalRemaining < requestedQty) throw new Error(`Only ${totalRemaining} slots available.`);
-    const preferred = preferredBlockId?.trim();
-    const ordered = [...capacities].sort((a, b) => b.remaining - a.remaining);
-    if (preferred) { const idx = ordered.findIndex(b => b.id === preferred); if (idx > 0) { const [picked] = ordered.splice(idx, 1); ordered.unshift(picked); } }
-    let left = requestedQty;
-    const plan: Array<{ id: string; qty: number }> = [];
-    for (const block of ordered) { if (left <= 0) break; if (block.remaining <= 0) continue; const q = Math.min(left, block.remaining); plan.push({ id: block.id, qty: q }); left -= q; }
-    if (left > 0) throw new Error("Unable to allocate all names.");
-    return plan;
+    setViaSerialDeepLink(false);
   }, []);
 
   function validateFormFields(actionType: "donate" | "pledge", selectedPledgeDays?: number): boolean {
@@ -348,33 +290,6 @@ export default function WallFramePage() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail.trim())) { setFormStatus("Please enter a valid email."); return false; }
     if (actionType === "pledge" && !selectedPledgeDays) { setFormStatus("Please select pledge days."); return false; }
     return true;
-  }
-
-  async function handleDonorSubmit(actionType: "donate" | "pledge", selectedPledgeDays?: number) {
-    if (!focusedBlock) return;
-    if (!validateFormFields(actionType)) return;
-    const qtyNumber = parseInt(formQtyInput, 10);
-    const donorName = formName.trim();
-    const wa = formSamePhone ? formPhone : formWa;
-    setSubmitting(true); setFormStatus("");
-    try {
-      const payloadBase: Record<string, unknown> = { name: donorName, date_of_birth: formDob, email: formEmail.trim(), phone: `${formPhoneCode} ${formPhone.trim()}`, whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}` };
-      const sharedSerial = buildSharedSerial("donate", focusedBlock);
-      payloadBase.receipt_serial = sharedSerial;
-      const capacities = await fetchCapacities();
-      const plan = buildAllocationPlan(capacities, qtyNumber, focusedBlock);
-      const allocationReceipts: { block_id: string; qty: number; amount: number; serial_number?: string }[] = [];
-      let firstReceipt: { serial_number: string; created_at: string } | null = null;
-      for (const alloc of plan) {
-        const response = await submitDonation(alloc.id, { ...payloadBase, qty: alloc.qty }) as BlockData & { receipt?: { serial_number: string; created_at: string } };
-        if (!firstReceipt && response.receipt) firstReceipt = response.receipt;
-        allocationReceipts.push({ block_id: alloc.id, qty: alloc.qty, amount: alloc.qty * COST_PER_NAME, serial_number: response.receipt?.serial_number });
-      }
-      const receiptPayload = { trust_name: "KIRTAN SEVA TRUST", serial_number: sharedSerial, action_type: "donate", donor_name: donorName, qty: qtyNumber, total_amount: qtyNumber * COST_PER_NAME, phone: `${formPhoneCode} ${formPhone.trim()}`, whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`, email: formEmail.trim() || undefined, created_at: firstReceipt?.created_at ?? new Date().toISOString(), allocations: allocationReceipts };
-      try { sessionStorage.setItem("kirtan-web-receipt", JSON.stringify(receiptPayload)); } catch { setFormStatus("Processed, but receipt page unavailable."); setSubmitting(false); return; }
-      setSubmitting(false); router.push("/web-app/receipt");
-    } catch (e: unknown) { setFormStatus((e as Error).message || "Error. Please try again."); }
-    setSubmitting(false);
   }
 
   async function handlePayOnline() {
@@ -434,14 +349,14 @@ export default function WallFramePage() {
     if (loading || autoMobileSelectedRef.current || focusedBlock) return;
     if (typeof window === "undefined") return;
     if (window.matchMedia("(min-width: 768px)").matches) return;
+    if (searchModeRef.current) { autoMobileSelectedRef.current = true; return; }
     const available: string[] = [];
     blocks.forEach((b, id) => { if (b.remaining > 0) available.push(id); });
     if (available.length === 0) return;
     const randomId = available[Math.floor(Math.random() * available.length)];
     autoMobileSelectedRef.current = true;
-    setMobileCol(randomId.charAt(0));
-    setMobileRow(parseInt(randomId.slice(1), 10));
-  }, [loading, blocks, focusedBlock]);
+    void openBlock(randomId);
+  }, [loading, blocks, focusedBlock, openBlock]);
 
   const dataReady = !loading && ready;
   const isBooting = !dataReady || !canvasReady;
@@ -496,7 +411,7 @@ export default function WallFramePage() {
                 <motion.div key="highlight-sidebar" className="flex flex-col gap-4 flex-1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <button onClick={backToSearch} className="self-start inline-flex items-center gap-2 px-3 py-2 rounded-md text-[11px] font-bold tracking-widest uppercase transition-all hover:brightness-110 active:scale-[0.99]" style={{ background: "rgba(255,246,233,0.08)", border: "1px solid rgba(228,180,121,0.28)", color: "#ffe9cc", fontFamily: '"Cinzel", Georgia, serif' }}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
-                    Back to Search
+                    {viaSerialDeepLink ? 'View Wall of Legacy' : 'Back to Search'}
                   </button>
                   {(() => {
                     const totalQty = highlightSubmissions.reduce((sum, s) => sum + (s.qty || 0), 0);
@@ -586,14 +501,14 @@ export default function WallFramePage() {
                                 View Receipt
                               </button>
                               <a
-                                href={`https://pdf-gen-sbvt.onrender.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
+                                href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="w-full inline-flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all hover:brightness-110 active:scale-[0.99]"
                                 style={{ background: "linear-gradient(135deg, #b08124 0%, #6b4a12 60%, #3f2a08 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 6px 14px rgba(176,129,36,0.4), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                                View Certificate
+                                Download Certificate
                               </a>
                             </div>
                           );
@@ -676,7 +591,7 @@ export default function WallFramePage() {
                       <span className="shrink-0 mt-px">⚠️</span>
                       <span>Some banks have issues with net banking. Use UPI or card for now.</span>
                     </div>
-                    <button className="w-full py-2.5 rounded-lg text-sm font-bold tracking-wider uppercase transition-all hover:brightness-110 active:scale-[0.99]" style={{ background: "linear-gradient(135deg, #d77a26 0%, #8a3a0a 60%, #5a2308 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 8px 20px rgba(201,107,27,0.45), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)", opacity: paymentLoading || submitting ? 0.7 : 1 }} disabled={paymentLoading || submitting} onClick={() => void handlePayOnline()}>
+                    <button className="w-full py-2.5 rounded-lg text-sm font-bold tracking-wider uppercase transition-all hover:brightness-110 active:scale-[0.99]" style={{ background: "linear-gradient(135deg, #d77a26 0%, #8a3a0a 60%, #5a2308 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 8px 20px rgba(201,107,27,0.45), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)", opacity: paymentLoading ? 0.7 : 1 }} disabled={paymentLoading} onClick={() => void handlePayOnline()}>
                       {paymentLoading ? <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />Redirecting</span> : "Pay Online"}
                     </button>
                     {paymentError && <div className="flex items-center gap-2 text-xs p-2 rounded-lg" style={{ background: "rgba(220,110,90,0.12)", border: "1px solid rgba(220,110,90,0.25)", color: "#ffd7d0" }}><p className="flex-1">{paymentError}</p><button type="button" className="px-2 py-1 rounded text-xs font-bold shrink-0" style={{ background: "rgba(255,246,233,0.1)", border: "1px solid rgba(228,180,121,0.26)", color: "#ffe9cc" }} onClick={() => void handlePayOnline()} disabled={paymentLoading}>Retry</button></div>}
@@ -1054,32 +969,30 @@ export default function WallFramePage() {
         {focusedBlock ? (
           /* ── Mobile Focused Block Full View ── */
           <div className="flex-1 w-full flex flex-col overflow-y-auto md:hidden px-4 pt-4 pb-8 gap-4">
-            {/* Header: block title or focused name + back button */}
-            <div className="flex items-center justify-between gap-3">
-              {highlightName ? (
+            {highlightName ? (
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "rgba(66,44,25,0.7)" }}>In Focus · Block {focusedBlock}</p>
                   <h2 className="text-lg font-black truncate" style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#3a1c0d", textShadow: "0 1px 8px rgba(255,255,255,0.8)" }}>{highlightName}</h2>
                 </div>
-              ) : (
-                <div>
-                  <h2 className="text-lg font-black" style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#3a1c0d", textShadow: "0 1px 8px rgba(255,255,255,0.8)" }}>Block {focusedBlock}</h2>
-                  {focusData && (
-                    <div className="flex gap-3 mt-0.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "rgba(66,44,25,0.7)" }}>Used: <span style={{ color: "#3a1c0d" }}>{focusData.total_used}</span></span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "rgba(66,44,25,0.7)" }}>Left: <span style={{ color: "#3a1c0d" }}>{focusData.remaining}</span></span>
-                    </div>
-                  )}
-                </div>
-              )}
+                <button
+                  onClick={() => { setFocusedBlock(null); setFocusData(null); setHighlightName(null); setViaSerialDeepLink(false); }}
+                  className="px-4 py-2 rounded-md text-xs font-bold tracking-widest uppercase shrink-0"
+                  style={{ background: "linear-gradient(180deg, rgba(50,10,15,0.95), rgba(25,5,8,0.98))", color: "#e6c18a", fontFamily: '"Cinzel", Georgia, serif', border: "1px solid rgba(215,173,87,0.4)" }}
+                >
+                  ← {viaSerialDeepLink ? 'View Wall of Legacy' : 'Back to Search'}
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={highlightName ? () => { setFocusedBlock(null); setFocusData(null); setHighlightName(null); setNameSearchQuery(""); setNameFilterQuery(""); } : closeBlock}
-                className="px-4 py-2 rounded-md text-xs font-bold tracking-widest uppercase shrink-0"
-                style={{ background: "linear-gradient(180deg, rgba(50,10,15,0.95), rgba(25,5,8,0.98))", color: "#e6c18a", fontFamily: '"Cinzel", Georgia, serif', border: "1px solid rgba(215,173,87,0.4)" }}
+                onClick={closeBlock}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-md text-[11px] font-bold tracking-widest uppercase shrink-0 active:scale-[0.99]"
+                style={{ background: "linear-gradient(180deg, rgba(50,10,15,0.95), rgba(25,5,8,0.98))", color: "#e6c18a", fontFamily: '"Cinzel", Georgia, serif', border: "1px solid rgba(215,173,87,0.4)", boxShadow: "0 6px 18px rgba(0,0,0,0.25)" }}
               >
-                ← {highlightName ? 'Back to Search' : 'Back'}
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                Change block or view Wall of Legacy
               </button>
-            </div>
+            )}
             {/* Single block canvas — only shown when a name is in focus */}
             {highlightName && (
               <div className="w-full rounded-2xl overflow-hidden shrink-0" style={{ aspectRatio: '1/1', minHeight: 'min(65vh, 92vw)', background: "#0a0604", boxShadow: "0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(201,107,27,0.3)" }}>
@@ -1174,14 +1087,14 @@ export default function WallFramePage() {
                         View Receipt
                       </button>
                       <a
-                        href={`https://pdf-gen-sbvt.onrender.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
+                        href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full inline-flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all hover:brightness-110 active:scale-[0.99]"
                         style={{ background: "linear-gradient(135deg, #b08124 0%, #6b4a12 60%, #3f2a08 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 6px 14px rgba(176,129,36,0.4), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                        View Certificate
+                        Download Certificate
                       </a>
                     </div>
                   ))}
@@ -1245,7 +1158,7 @@ export default function WallFramePage() {
                 <span className="shrink-0 mt-px">⚠️</span>
                 <span>Some banks have issues with net banking. Use UPI or card.</span>
               </div>
-              <button className="w-full py-2.5 rounded-lg text-sm font-bold tracking-wider uppercase transition-all hover:brightness-110 active:scale-[0.99]" style={{ background: "linear-gradient(135deg, #d77a26 0%, #8a3a0a 60%, #5a2308 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 8px 20px rgba(201,107,27,0.45), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)", opacity: paymentLoading || submitting ? 0.7 : 1 }} disabled={paymentLoading || submitting} onClick={() => void handlePayOnline()}>
+              <button className="w-full py-2.5 rounded-lg text-sm font-bold tracking-wider uppercase transition-all hover:brightness-110 active:scale-[0.99]" style={{ background: "linear-gradient(135deg, #d77a26 0%, #8a3a0a 60%, #5a2308 100%)", color: "#fff5e7", border: "1px solid rgba(252,234,187,0.5)", boxShadow: "0 8px 20px rgba(201,107,27,0.45), inset 0 1px 0 rgba(252,234,187,0.4)", fontFamily: '"Cinzel", Georgia, serif', textShadow: "0 1px 2px rgba(0,0,0,0.5)", opacity: paymentLoading ? 0.7 : 1 }} disabled={paymentLoading} onClick={() => void handlePayOnline()}>
                 {paymentLoading ? <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-r-transparent" />Redirecting</span> : "Pay Online"}
               </button>
               {paymentError && <div className="flex items-center gap-2 text-xs p-2 rounded-lg" style={{ background: "rgba(220,110,90,0.12)", border: "1px solid rgba(220,110,90,0.25)", color: "#ffd7d0" }}><p className="flex-1">{paymentError}</p><button type="button" className="px-2 py-1 rounded text-xs font-bold shrink-0" style={{ background: "rgba(255,246,233,0.1)", border: "1px solid rgba(228,180,121,0.26)", color: "#ffe9cc" }} onClick={() => void handlePayOnline()} disabled={paymentLoading}>Retry</button></div>}
@@ -1668,7 +1581,7 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
   if (allDonors.length === 0) {
       return (
         <div className="flex-1 flex items-center justify-center h-full">
-            <span className="text-xs uppercase tracking-widest font-bold" style={{ color: "rgba(58, 28, 13, 0.6)" }}>Awaiting Today's First Inscription</span>
+            <span className="text-xs uppercase tracking-widest font-bold" style={{ color: "rgba(58, 28, 13, 0.6)" }}>Awaiting Today&apos;s First Inscription</span>
         </div>
       );
   }
@@ -1684,7 +1597,7 @@ function DonorMarquee({ blocks }: { blocks: Map<string, BlockData> }) {
           boxShadow: "4px 0 20px rgba(0,0,0,0.05)",
         }}
       >
-        Today's Legacy
+        Today&apos;s Legacy
       </div>
       <div className="flex-1 overflow-hidden h-full flex items-center relative">
         <div
