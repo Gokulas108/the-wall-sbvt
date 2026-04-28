@@ -9,7 +9,6 @@ import {
 } from "@/lib/mosaic/engine";
 
 const API = "/api";
-const LOAD_CONCURRENCY = 8;
 
 export function useBlockData() {
   const [blocks, setBlocks] = useState<Map<string, BlockData>>(new Map());
@@ -20,25 +19,13 @@ export function useBlockData() {
     blocksRef.current = blocks;
   }, [blocks]);
 
-  // Fetch all blocks summary then individual names
+  // One DB query, one HTTP roundtrip — every block + names returned together.
   const loadAll = useCallback(async () => {
     try {
-      const allRes = await fetch(`${API}/blocks`);
-      const all: Record<string, { total_qty: number }> = await allRes.json();
-      const ids = Object.keys(all);
-      const nameResults: BlockData[] = [];
-      for (let idx = 0; idx < ids.length; idx += LOAD_CONCURRENCY) {
-        const chunk = ids.slice(idx, idx + LOAD_CONCURRENCY);
-        const chunkResults = await Promise.all(
-          chunk.map(async (id) => {
-            const res = await fetch(`${API}/blocks/${id}/names`);
-            return res.json() as Promise<BlockData>;
-          }),
-        );
-        nameResults.push(...chunkResults);
-      }
+      const res = await fetch(`${API}/blocks/all`);
+      const data = (await res.json()) as { blocks: Record<string, BlockData> };
       const map = new Map<string, BlockData>();
-      for (const d of nameResults) map.set(d.block_id, d);
+      for (const id in data.blocks) map.set(id, data.blocks[id]);
       setBlocks(map);
     } catch {
       /* swallow */

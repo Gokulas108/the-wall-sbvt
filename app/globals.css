@@ -113,6 +113,57 @@ body {
   }
 }
 
+:root {
+  --wall-frame-border: 1.5px;
+  --wall-frame-shadow: 20px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --wall-frame-border: 3px;
+    --wall-frame-shadow: 40px;
+  }
+}
+
+@keyframes gold-sheen {
+  0% { transform: translate3d(-150%, 0, 0) skewX(-20deg); }
+  50% { transform: translate3d(350%, 0, 0) skewX(-20deg); }
+  100% { transform: translate3d(350%, 0, 0) skewX(-20deg); }
+}
+
+@keyframes gold-bg-shift {
+  0% { transform: translate3d(-10%, -10%, 0); }
+  50% { transform: translate3d(10%, 10%, 0); }
+  100% { transform: translate3d(-10%, -10%, 0); }
+}
+
+.animate-gold-bg {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate; /* Ensures stacking context for pseudo-elements */
+  transform: translateZ(0); /* Fixes Safari border-radius clipping with overflow:hidden */
+  background: #b37d27;
+}
+
+.animate-gold-bg::before {
+  content: "";
+  position: absolute;
+  top: -25%;
+  left: -25%;
+  width: 150%;
+  height: 150%;
+  background: linear-gradient(135deg, #e6b963 0%, #b37d27 20%, #ffdf91 35%, #664200 50%, #b37d27 70%, #ffdf91 85%, #e6b963 100%);
+  background-size: 100% 100%;
+  animation: gold-bg-shift 15s infinite ease-in-out;
+  will-change: transform;
+  z-index: -1;
+}
+
+.animate-gold-sheen {
+  animation: gold-sheen 6s infinite ease-in-out;
+  will-change: transform;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 8px;

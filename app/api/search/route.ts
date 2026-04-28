@@ -44,6 +44,12 @@ export async function GET(req: NextRequest) {
     take: 40,
   });
 
+  const nameKeys = new Set(
+    Array.from(groupedNames.values()).map(
+      (r) => `${r.name.toLowerCase()}|${r.block_id}`,
+    ),
+  );
+
   const results = [
     ...Array.from(groupedNames.values()).map((r) => ({
       kind: "name",
@@ -57,7 +63,7 @@ export async function GET(req: NextRequest) {
       phone: null,
       email: null,
     })),
-    ...submissionRows.map((r) => {
+    ...submissionRows.flatMap((r) => {
       const serialNumber =
         r.serialNumber && r.serialNumber.trim().length > 0
           ? r.serialNumber
@@ -68,19 +74,32 @@ export async function GET(req: NextRequest) {
       const isSerialHit = serialLower.includes(queryLower);
       const isPhoneHit =
         phoneLower.includes(queryLower) || waLower.includes(queryLower);
+      const isNameOnlyHit = !isSerialHit && !isPhoneHit;
 
-      return {
-        kind: isSerialHit ? "serial" : isPhoneHit ? "phone" : "name",
-        label: r.name,
-        block_id: r.blockId,
-        qty: r.qty,
-        created_at: r.createdAt.toISOString(),
-        subtitle: `${isSerialHit ? "Serial" : isPhoneHit ? "Phone/WhatsApp" : "Name"} match · ${r.actionType === "pledge" ? "Pledge" : "Donation"}`,
-        serial_number: serialNumber,
-        action_type: r.actionType,
-        phone: r.phone,
-        email: r.email,
-      };
+      // Skip submission rows whose only match is the name when a grouped
+      // BlockName entry already covers the same (name, block) — they're the
+      // same inscription seen from two tables.
+      if (
+        isNameOnlyHit &&
+        nameKeys.has(`${r.name.toLowerCase()}|${r.blockId}`)
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          kind: isSerialHit ? "serial" : isPhoneHit ? "phone" : "name",
+          label: r.name,
+          block_id: r.blockId,
+          qty: r.qty,
+          created_at: r.createdAt.toISOString(),
+          subtitle: `${isSerialHit ? "Serial" : isPhoneHit ? "Phone/WhatsApp" : "Name"} match · ${r.actionType === "pledge" ? "Pledge" : "Donation"}`,
+          serial_number: serialNumber,
+          action_type: r.actionType,
+          phone: r.phone,
+          email: r.email,
+        },
+      ];
     }),
   ];
 

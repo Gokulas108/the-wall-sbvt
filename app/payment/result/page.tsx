@@ -286,7 +286,7 @@ function PaymentResultContent() {
             style={{ color: "rgba(255,221,168,0.82)" }}
           >
             {receipt
-              ? `Receipt Issued by ${receipt.trust_name}`
+              ? `Receipt issued by ${receipt.trust_name || "Kirtan Seva Trust"}`
               : "Online Payment"}
           </p>
           <h2
