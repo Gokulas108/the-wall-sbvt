@@ -1046,7 +1046,7 @@ export default function WallFramePage() {
                           className="text-[10px] font-bold tracking-wider uppercase"
                           style={{ color: "rgba(255,230,198,0.85)" }}
                         >
-                          Name
+                          Name <span style={{ color: "#f6a05a" }}>*</span>
                         </label>
                         <input
                           value={formName}
@@ -1067,7 +1067,7 @@ export default function WallFramePage() {
                           className="text-[10px] font-bold tracking-wider uppercase"
                           style={{ color: "rgba(255,230,198,0.85)" }}
                         >
-                          Qty
+                          Qty <span style={{ color: "#f6a05a" }}>*</span>
                         </label>
                         <input
                           type="text"
@@ -1092,7 +1092,7 @@ export default function WallFramePage() {
                         className="text-[10px] font-bold tracking-wider uppercase"
                         style={{ color: "rgba(255,230,198,0.85)" }}
                       >
-                        Mobile Number
+                        Mobile Number <span style={{ color: "#f6a05a" }}>*</span>
                       </label>
                       <div className="flex gap-2">
                         <select
@@ -1150,7 +1150,7 @@ export default function WallFramePage() {
                           className="text-[10px] font-bold tracking-wider uppercase"
                           style={{ color: "rgba(255,230,198,0.85)" }}
                         >
-                          WhatsApp Number
+                          WhatsApp Number <span style={{ color: "#f6a05a" }}>*</span>
                         </label>
                         <div className="flex gap-2">
                           <select
@@ -2394,7 +2394,7 @@ export default function WallFramePage() {
                       className="text-[10px] font-bold tracking-[0.18em] uppercase"
                       style={{ color: "rgba(215,173,87,0.85)" }}
                     >
-                      Name
+                      Name <span style={{ color: "#f6a05a" }}>*</span>
                     </label>
                     <input
                       value={formName}
@@ -2415,7 +2415,7 @@ export default function WallFramePage() {
                       className="text-[10px] font-bold tracking-[0.18em] uppercase"
                       style={{ color: "rgba(215,173,87,0.85)" }}
                     >
-                      Qty
+                      Qty <span style={{ color: "#f6a05a" }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -2440,7 +2440,7 @@ export default function WallFramePage() {
                     className="text-[10px] font-bold tracking-[0.18em] uppercase"
                     style={{ color: "rgba(215,173,87,0.85)" }}
                   >
-                    Mobile Number
+                    Mobile Number <span style={{ color: "#f6a05a" }}>*</span>
                   </label>
                   <div className="flex gap-2">
                     <select
@@ -2503,7 +2503,7 @@ export default function WallFramePage() {
                       className="text-[10px] font-bold tracking-[0.18em] uppercase"
                       style={{ color: "rgba(215,173,87,0.85)" }}
                     >
-                      WhatsApp Number
+                      WhatsApp Number <span style={{ color: "#f6a05a" }}>*</span>
                     </label>
                     <div className="flex gap-2">
                       <select

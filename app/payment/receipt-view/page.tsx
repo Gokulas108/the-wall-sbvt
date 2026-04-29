@@ -131,7 +131,7 @@ function ReceiptViewContent() {
             The transaction ID is missing from this link.
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block px-6 py-3 rounded-lg text-sm font-bold"
             style={{ background: "linear-gradient(135deg, #c96b1b, #e0b860)", color: "#fff" }}
           >
@@ -200,7 +200,7 @@ function ReceiptViewContent() {
             {error || "We couldn't load this receipt."}
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block px-6 py-3 rounded-lg text-sm font-bold"
             style={{ background: "linear-gradient(135deg, #c96b1b, #e0b860)", color: "#fff" }}
           >

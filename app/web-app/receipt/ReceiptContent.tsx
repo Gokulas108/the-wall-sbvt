@@ -129,7 +129,7 @@ export function ReceiptContent() {
             We could not load your latest donation receipt on this device.
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block mt-5 px-4 py-2 rounded-lg text-sm font-semibold"
             style={{
               background: "linear-gradient(135deg, #c96b1b, #e0b860)",
@@ -193,7 +193,7 @@ export function ReceiptContent() {
             is now secured on the living wall.
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block px-6 py-3 rounded-lg text-sm font-bold"
             style={{
               background: "linear-gradient(135deg, #c96b1b, #e0b860)",
@@ -233,7 +233,7 @@ export function ReceiptContent() {
             We could not load your donation receipt on this device.
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block mt-5 px-4 py-2 rounded-lg text-sm font-semibold"
             style={{
               background: "linear-gradient(135deg, #c96b1b, #e0b860)",
@@ -437,7 +437,7 @@ export function ReceiptContent() {
             Save as PDF
           </button>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="px-4 py-2 rounded-lg text-sm font-semibold"
             style={{
               background: "rgba(255,246,233,0.1)",

@@ -190,7 +190,7 @@ function PaymentResultContent() {
             payment again.
           </p>
           <Link
-            href="/web-app"
+            href="/wall-frame"
             className="inline-block px-6 py-3 rounded-lg text-sm font-bold"
             style={{
               background: "linear-gradient(135deg, #c96b1b, #e0b860)",
@@ -537,7 +537,7 @@ function PaymentResultContent() {
               Save as PDF
             </button>
             <Link
-              href="/web-app"
+              href="/wall-frame"
               className="px-4 py-2 rounded-lg text-sm font-semibold"
               style={{
                 background: "rgba(255,246,233,0.1)",
@@ -609,7 +609,7 @@ function PaymentResultContent() {
           )}
           <div className="flex flex-col gap-2">
             <Link
-              href="/web-app"
+              href="/wall-frame"
               className="w-full py-3 rounded-xl font-bold text-white text-center text-sm"
               style={{
                 background: "linear-gradient(135deg, #c96b1b, #e0b860)",
@@ -667,7 +667,7 @@ function PaymentResultContent() {
           </p>
         )}
         <Link
-          href="/web-app"
+          href="/wall-frame"
           className="inline-block px-6 py-3 rounded-lg text-sm font-bold"
           style={{
             background: "linear-gradient(135deg, #c96b1b, #e0b860)",
