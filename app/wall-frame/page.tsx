@@ -900,7 +900,7 @@ export default function WallFramePage() {
                                 View Receipt
                               </button>
                               <a
-                                href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
+                                href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}&serial=${encodeURIComponent(s.serial_number || "")}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="w-full inline-flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all hover:brightness-110 active:scale-[0.99]"
@@ -1092,7 +1092,8 @@ export default function WallFramePage() {
                         className="text-[10px] font-bold tracking-wider uppercase"
                         style={{ color: "rgba(255,230,198,0.85)" }}
                       >
-                        Mobile Number <span style={{ color: "#f6a05a" }}>*</span>
+                        Mobile Number{" "}
+                        <span style={{ color: "#f6a05a" }}>*</span>
                       </label>
                       <div className="flex gap-2">
                         <select
@@ -1150,7 +1151,8 @@ export default function WallFramePage() {
                           className="text-[10px] font-bold tracking-wider uppercase"
                           style={{ color: "rgba(255,230,198,0.85)" }}
                         >
-                          WhatsApp Number <span style={{ color: "#f6a05a" }}>*</span>
+                          WhatsApp Number{" "}
+                          <span style={{ color: "#f6a05a" }}>*</span>
                         </label>
                         <div className="flex gap-2">
                           <select
@@ -2318,7 +2320,7 @@ export default function WallFramePage() {
                           View Receipt
                         </button>
                         <a
-                          href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}`}
+                          href={`https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket?name=${encodeURIComponent(s.name)}&qty=${s.qty}&block=${encodeURIComponent(focusedBlock!)}&serial=${encodeURIComponent(s.serial_number || "")}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="w-full inline-flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all hover:brightness-110 active:scale-[0.99]"
@@ -2503,7 +2505,8 @@ export default function WallFramePage() {
                       className="text-[10px] font-bold tracking-[0.18em] uppercase"
                       style={{ color: "rgba(215,173,87,0.85)" }}
                     >
-                      WhatsApp Number <span style={{ color: "#f6a05a" }}>*</span>
+                      WhatsApp Number{" "}
+                      <span style={{ color: "#f6a05a" }}>*</span>
                     </label>
                     <div className="flex gap-2">
                       <select
