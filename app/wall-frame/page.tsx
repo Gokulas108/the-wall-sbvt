@@ -532,7 +532,6 @@ export default function WallFramePage() {
   blocks.forEach((b) => {
     totalNames += b.total_used;
   });
-  const totalCollected = totalNames * COST_PER_NAME;
 
   return (
     <div
@@ -1589,32 +1588,6 @@ export default function WallFramePage() {
                           {formatINR(totalNames)}
                         </p>
                       </div>
-                      <div className="flex justify-center items-center py-2">
-                        <div className="w-12 h-px bg-gradient-to-r from-transparent via-[#d7ad57]/50 to-transparent" />
-                        <div className="w-1.5 h-1.5 rotate-45 bg-[#d7ad57]/60 mx-2" />
-                        <div className="w-12 h-px bg-gradient-to-r from-transparent via-[#d7ad57]/50 to-transparent" />
-                      </div>
-                      <div>
-                        <p
-                          className="text-[10px] font-bold tracking-[0.2em] uppercase mb-1"
-                          style={{ color: "#a88e6f" }}
-                        >
-                          Amount Raised
-                        </p>
-                        <p
-                          className="text-3xl font-bold tracking-wide"
-                          style={{
-                            fontFamily: '"Cinzel", Georgia, serif',
-                            background:
-                              "linear-gradient(135deg, #fceabb, #d7ad57)",
-                            WebkitBackgroundClip: "text",
-                            color: "transparent",
-                            textShadow: "0 2px 10px rgba(215,173,87,0.3)",
-                          }}
-                        >
-                          ₹{formatINR(totalCollected)}
-                        </p>
-                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -1919,34 +1892,6 @@ export default function WallFramePage() {
                         }}
                       >
                         {formatINR(totalNames)}
-                      </p>
-                    </div>
-
-                    <div className="flex justify-center items-center py-1">
-                      <div className="w-10 h-px bg-gradient-to-r from-transparent via-[#d7ad57]/40 to-transparent" />
-                      <div className="w-1 h-1 rotate-45 bg-[#d7ad57]/50 mx-2" />
-                      <div className="w-10 h-px bg-gradient-to-r from-transparent via-[#d7ad57]/40 to-transparent" />
-                    </div>
-
-                    <div>
-                      <p
-                        className="text-[9px] font-bold tracking-[0.2em] uppercase mb-1"
-                        style={{ color: "#a88e6f" }}
-                      >
-                        Amount Raised
-                      </p>
-                      <p
-                        className="text-2xl font-bold tracking-wide"
-                        style={{
-                          fontFamily: '"Cinzel", Georgia, serif',
-                          background:
-                            "linear-gradient(135deg, #fceabb, #d7ad57)",
-                          WebkitBackgroundClip: "text",
-                          color: "transparent",
-                          textShadow: "0 2px 10px rgba(215,173,87,0.3)",
-                        }}
-                      >
-                        ₹{formatINR(totalCollected)}
                       </p>
                     </div>
                   </div>
@@ -3324,8 +3269,8 @@ export default function WallFramePage() {
                   return m.charAt(0).toUpperCase() + m.slice(1);
                 };
                 return (
-                  <div className="grid sm:grid-cols-2 gap-3 mt-5">
-                    <div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-3 mt-5">
+                    <div className="col-span-2">
                       <p
                         className="text-xs uppercase tracking-[0.1em]"
                         style={{ color: "rgba(255,221,168,0.82)" }}
@@ -3429,14 +3374,14 @@ export default function WallFramePage() {
                       </div>
                     )}
                     {receiptOverlay.email && (
-                      <div>
+                      <div className="col-span-2">
                         <p
                           className="text-xs uppercase tracking-[0.1em]"
                           style={{ color: "rgba(255,221,168,0.82)" }}
                         >
                           Email
                         </p>
-                        <p style={{ color: "#fff4e3" }}>
+                        <p style={{ color: "#fff4e3", wordBreak: "break-all" }}>
                           {receiptOverlay.email}
                         </p>
                       </div>
