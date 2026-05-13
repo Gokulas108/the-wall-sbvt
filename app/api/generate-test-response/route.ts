@@ -16,19 +16,6 @@ type DoubleTickTemplateResponse = {
   data?: unknown;
 };
 
-type SearchResult = {
-  kind: string;
-  label: string;
-  block_id: string;
-  qty: number;
-  created_at: string;
-  subtitle: string | null;
-  serial_number: string | null;
-  action_type: string | null;
-  phone: string | null;
-  email: string | null;
-};
-
 type DonorLookup = {
   name: string;
   qty: number;
@@ -36,9 +23,24 @@ type DonorLookup = {
   serial: string;
 };
 
-type SearchResponse = {
-  query: string;
-  results: SearchResult[];
+type SubmissionResponse = {
+  submission?: {
+    id: number;
+    blockId: string;
+    serialNumber: string | null;
+    actionType: string;
+    name: string;
+    qty: number;
+    dateOfBirth: string;
+    email: string;
+    phone: string;
+    whatsapp: string;
+    collectedByUserId: number | null;
+    pledgeDueDays: number | null;
+    paymentMethod: string | null;
+    paymentReference: string | null;
+    createdAt: string;
+  };
 };
 
 const DOUBLETICK_API_URL =
@@ -102,18 +104,19 @@ async function sendTypingIndicator(apiKey: string, from: string, to: string) {
 }
 
 async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
-  const url = new URL("/api/search", req.nextUrl.origin);
-  url.searchParams.set("q", whatsapp);
+  const url = new URL("/api/block-submissions", req.nextUrl.origin);
+  url.searchParams.set("whatsapp_number", whatsapp);
   const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) return null;
-  const data = (await response.json()) as SearchResponse;
-  const hit = data.results.find((result) => result.kind === "phone");
-  if (!hit || !hit.serial_number) return null;
+  const data = (await response.json()) as SubmissionResponse;
+  const submission = data.submission;
+  if (!submission) return null;
+  if (!submission.serialNumber) return null;
   return {
-    name: hit.label,
-    qty: hit.qty,
-    blockId: hit.block_id,
-    serial: hit.serial_number,
+    name: submission.name,
+    qty: submission.qty,
+    blockId: submission.blockId,
+    serial: submission.serialNumber,
   } satisfies DonorLookup;
 }
 
@@ -267,9 +270,7 @@ export async function POST(req: NextRequest) {
               serial: intake.donorSerial,
             }
           : null;
-      const donorFallback = donor
-        ? null
-        : await lookupDonorByWhatsapp(req, to);
+      const donorFallback = donor ? null : await lookupDonorByWhatsapp(req, to);
       const donorDetails = donor ?? donorFallback;
 
       if (!donorDetails) {
