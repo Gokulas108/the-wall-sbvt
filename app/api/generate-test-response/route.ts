@@ -356,26 +356,33 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(receiptPayload),
       });
 
+      const receiptText = await receiptResponse.text();
       console.info("[doubletick] receipt response", {
         status: receiptResponse.status,
         ok: receiptResponse.ok,
+        body: receiptText,
       });
 
       if (!receiptResponse.ok) {
-        const text = await receiptResponse.text();
         return NextResponse.json(
           {
             ok: false,
             error: "Doubletick receipt request failed.",
             status: receiptResponse.status,
-            details: text,
+            details: receiptText,
           },
           { status: 502 },
         );
       }
 
-      const receiptData =
-        (await receiptResponse.json()) as DoubleTickTemplateResponse;
+      let receiptData: DoubleTickTemplateResponse | null = null;
+      try {
+        receiptData = receiptText
+          ? (JSON.parse(receiptText) as DoubleTickTemplateResponse)
+          : null;
+      } catch {
+        receiptData = null;
+      }
       return NextResponse.json({ ok: true, step: "receipt_sent", receiptData });
     }
   }
