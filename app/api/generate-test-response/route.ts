@@ -54,6 +54,7 @@ const DOUBLETICK_RECEIPT_TEMPLATE = "receipt_generation";
 const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
+const TYPING_DELAY_MS = 800;
 const CERTIFICATE_BASE_URL =
   "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
 
@@ -117,6 +118,10 @@ async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
     blockId: submission.blockId,
     serial: submission.serialNumber,
   } satisfies DonorLookup;
+}
+
+async function pause(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildCertificateUrl(donor: DonorLookup) {
@@ -227,6 +232,7 @@ export async function POST(req: NextRequest) {
       });
 
       await sendTypingIndicator(apiKey, from, to);
+      await pause(TYPING_DELAY_MS);
       const askAddress = await sendTextMessage(
         apiKey,
         from,
@@ -325,7 +331,7 @@ export async function POST(req: NextRequest) {
               language,
               templateData: {
                 header: {
-                  type: "document",
+                  type: "DOCUMENT",
                   url: pdfUrl,
                   fileName: "receipt.pdf",
                 },
