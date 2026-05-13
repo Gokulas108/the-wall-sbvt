@@ -16,15 +16,36 @@ type DoubleTickTemplateResponse = {
   data?: unknown;
 };
 
+type SearchResult = {
+  kind: string;
+  label: string;
+  block_id: string;
+  qty: number;
+  created_at: string;
+  subtitle: string | null;
+  serial_number: string | null;
+  action_type: string | null;
+  phone: string | null;
+  email: string | null;
+};
+
+type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+};
+
 const DOUBLETICK_API_URL =
   "https://public.doubletick.io/v2/whatsapp/message/template";
 const DOUBLETICK_TEXT_URL =
   "https://public.doubletick.io/whatsapp/message/text";
+const DOUBLETICK_TYPING_URL =
+  "https://public.doubletick.io/whatsapp/message/typing-indicator";
 const DOUBLETICK_TEMPLATE_NAME = "donation_successful";
 const DEFAULT_TEMPLATE_NAME_VALUE = "Satya";
 const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
+const TYPING_DELAY_MS = 700;
 
 function normalizeText(value?: string | null) {
   return (value ?? "").trim().toLowerCase();
@@ -54,6 +75,35 @@ async function sendTextMessage(
       content: { text },
     }),
   });
+}
+
+async function sendTypingIndicator(apiKey: string, from: string, to: string) {
+  return fetch(DOUBLETICK_TYPING_URL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify({
+      wabaNumber: from,
+      customerNumber: to,
+    }),
+  });
+}
+
+async function lookupDonorNameByWhatsapp(req: NextRequest, whatsapp: string) {
+  const url = new URL("/api/search", req.nextUrl.origin);
+  url.searchParams.set("q", whatsapp);
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok) return null;
+  const data = (await response.json()) as SearchResponse;
+  const hit = data.results.find((result) => result.kind === "phone");
+  return hit?.label ?? null;
+}
+
+async function pause(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function POST(req: NextRequest) {
@@ -122,11 +172,13 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      await sendTypingIndicator(apiKey, from, to);
+      await pause(TYPING_DELAY_MS);
       const askName = await sendTextMessage(
         apiKey,
         from,
         to,
-        "Please reply with your legal name.",
+        "Please reply with your legal name.\n*Example: Satya Narayan Das*",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -153,11 +205,13 @@ export async function POST(req: NextRequest) {
         data: { legalName: incomingText, status: "awaiting_address" },
       });
 
+      await sendTypingIndicator(apiKey, from, to);
+      await pause(TYPING_DELAY_MS);
       const askAddress = await sendTextMessage(
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.",
+        "Please reply with your address and pincode.\n*Example: 24 MG Road, Pune 411001*",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -213,6 +267,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
+  const donorName = await lookupDonorNameByWhatsapp(req, to);
+  if (!donorName) {
+    await sendTypingIndicator(apiKey, from, to);
+    await pause(TYPING_DELAY_MS);
+    const noMatch = await sendTextMessage(
+      apiKey,
+      from,
+      to,
+      "No submission found in this whatsapp number. Try a different one.",
+    );
+    if (!noMatch.ok) {
+      const text = await noMatch.text();
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Failed to send no-submission response.",
+          status: noMatch.status,
+          details: text,
+        },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json({ ok: true, step: "no_submission" });
+  }
+
   const body = {
     messages: [
       {
@@ -223,7 +303,7 @@ export async function POST(req: NextRequest) {
           language,
           templateData: {
             body: {
-              placeholders: [{ name: DEFAULT_TEMPLATE_NAME_VALUE }],
+              placeholders: [{ name: donorName }],
             },
           },
         },
