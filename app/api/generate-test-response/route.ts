@@ -54,7 +54,7 @@ const DOUBLETICK_RECEIPT_TEMPLATE = "receipt_generation";
 const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
-const TYPING_DELAY_MS = 800;
+const TYPING_DELAY_MS = 1500;
 const CERTIFICATE_BASE_URL =
   "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
 
@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n*Example: _Abhay Charan_*",
+        "Please reply with your legal name.\n_Example: Abhay Charan_",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n*Example: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_*",
+        "Please reply with your address and pincode.\n_Example: ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -332,8 +332,8 @@ export async function POST(req: NextRequest) {
               templateData: {
                 header: {
                   type: "DOCUMENT",
-                  url: pdfUrl,
-                  fileName: "receipt.pdf",
+                  mediaUrl: pdfUrl,
+                  filename: "receipt.pdf",
                 },
                 body: {
                   placeholders: [{ name: donorDetails.name }],
