@@ -113,6 +113,10 @@ model WhatsAppIntake {
   id        Int      @id @default(autoincrement())
   phone     String   @unique
   status    String   @default("awaiting_legal_name")
+  donorName String?  @map("donor_name")
+  donorQty  Int?     @map("donor_qty")
+  donorBlockId String? @map("donor_block_id")
+  donorSerial String? @map("donor_serial")
   legalName String?  @map("legal_name")
   address   String?
   pincode   String?

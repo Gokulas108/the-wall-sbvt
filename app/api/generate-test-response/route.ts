@@ -29,6 +29,13 @@ type SearchResult = {
   email: string | null;
 };
 
+type DonorLookup = {
+  name: string;
+  qty: number;
+  blockId: string;
+  serial: string;
+};
+
 type SearchResponse = {
   query: string;
   results: SearchResult[];
@@ -41,11 +48,13 @@ const DOUBLETICK_TEXT_URL =
 const DOUBLETICK_TYPING_URL =
   "https://public.doubletick.io/whatsapp/message/typing-indicator";
 const DOUBLETICK_TEMPLATE_NAME = "donation_successful";
-const DEFAULT_TEMPLATE_NAME_VALUE = "Satya";
+const DOUBLETICK_RECEIPT_TEMPLATE = "receipt_generation";
 const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
 const TYPING_DELAY_MS = 700;
+const CERTIFICATE_BASE_URL =
+  "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
 
 function normalizeText(value?: string | null) {
   return (value ?? "").trim().toLowerCase();
@@ -92,18 +101,33 @@ async function sendTypingIndicator(apiKey: string, from: string, to: string) {
   });
 }
 
-async function lookupDonorNameByWhatsapp(req: NextRequest, whatsapp: string) {
+async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
   const url = new URL("/api/search", req.nextUrl.origin);
   url.searchParams.set("q", whatsapp);
   const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) return null;
   const data = (await response.json()) as SearchResponse;
   const hit = data.results.find((result) => result.kind === "phone");
-  return hit?.label ?? null;
+  if (!hit || !hit.serial_number) return null;
+  return {
+    name: hit.label,
+    qty: hit.qty,
+    blockId: hit.block_id,
+    serial: hit.serial_number,
+  } satisfies DonorLookup;
 }
 
 async function pause(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildCertificateUrl(donor: DonorLookup) {
+  const url = new URL(CERTIFICATE_BASE_URL);
+  url.searchParams.set("name", donor.name);
+  url.searchParams.set("qty", String(donor.qty));
+  url.searchParams.set("block", donor.blockId);
+  url.searchParams.set("serial", donor.serial);
+  return url.toString();
 }
 
 export async function POST(req: NextRequest) {
@@ -231,35 +255,123 @@ export async function POST(req: NextRequest) {
 
     if (intake?.status === "awaiting_address") {
       const pincode = extractPincode(incomingText);
+      const donor =
+        intake.donorName &&
+        intake.donorQty &&
+        intake.donorBlockId &&
+        intake.donorSerial
+          ? {
+              name: intake.donorName,
+              qty: intake.donorQty,
+              blockId: intake.donorBlockId,
+              serial: intake.donorSerial,
+            }
+          : null;
+      const donorFallback = donor
+        ? null
+        : await lookupDonorByWhatsapp(req, to);
+      const donorDetails = donor ?? donorFallback;
+
+      if (!donorDetails) {
+        await prisma.whatsAppIntake.update({
+          where: { phone: to },
+          data: {
+            address: incomingText,
+            pincode,
+            status: "completed",
+          },
+        });
+
+        await sendTypingIndicator(apiKey, from, to);
+        await pause(TYPING_DELAY_MS);
+        const noMatch = await sendTextMessage(
+          apiKey,
+          from,
+          to,
+          "No submission found in this whatsapp number. Try a different one.",
+        );
+        if (!noMatch.ok) {
+          const text = await noMatch.text();
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Failed to send no-submission response.",
+              status: noMatch.status,
+              details: text,
+            },
+            { status: 502 },
+          );
+        }
+
+        return NextResponse.json({ ok: true, step: "no_submission" });
+      }
+
       await prisma.whatsAppIntake.update({
         where: { phone: to },
         data: {
           address: incomingText,
           pincode,
+          donorName: donorDetails.name,
+          donorQty: donorDetails.qty,
+          donorBlockId: donorDetails.blockId,
+          donorSerial: donorDetails.serial,
           status: "completed",
         },
       });
 
-      const confirm = await sendTextMessage(
-        apiKey,
-        from,
-        to,
-        "Thanks! We have saved your details.",
-      );
-      if (!confirm.ok) {
-        const text = await confirm.text();
+      const pdfUrl = buildCertificateUrl(donorDetails);
+      await sendTypingIndicator(apiKey, from, to);
+      await pause(TYPING_DELAY_MS);
+
+      const receiptPayload = {
+        messages: [
+          {
+            to,
+            from,
+            content: {
+              templateName: DOUBLETICK_RECEIPT_TEMPLATE,
+              language,
+              templateData: {
+                header: {
+                  type: "document",
+                  url: pdfUrl,
+                  fileName: "receipt.pdf",
+                },
+                body: {
+                  placeholders: [{ name: donorDetails.name }],
+                },
+              },
+            },
+          },
+        ],
+      };
+
+      const receiptResponse = await fetch(DOUBLETICK_API_URL, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          Authorization: apiKey,
+        },
+        body: JSON.stringify(receiptPayload),
+      });
+
+      if (!receiptResponse.ok) {
+        const text = await receiptResponse.text();
         return NextResponse.json(
           {
             ok: false,
-            error: "Failed to send confirmation.",
-            status: confirm.status,
+            error: "Doubletick receipt request failed.",
+            status: receiptResponse.status,
             details: text,
           },
           { status: 502 },
         );
       }
 
-      return NextResponse.json({ ok: true, step: "completed" });
+      const receiptData =
+        (await receiptResponse.json()) as DoubleTickTemplateResponse;
+      return NextResponse.json({ ok: true, step: "receipt_sent", receiptData });
     }
   }
 
@@ -267,8 +379,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  const donorName = await lookupDonorNameByWhatsapp(req, to);
-  if (!donorName) {
+  const donor = await lookupDonorByWhatsapp(req, to);
+  if (!donor) {
     await sendTypingIndicator(apiKey, from, to);
     await pause(TYPING_DELAY_MS);
     const noMatch = await sendTextMessage(
@@ -293,6 +405,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, step: "no_submission" });
   }
 
+  await prisma.whatsAppIntake.upsert({
+    where: { phone: to },
+    update: {
+      donorName: donor.name,
+      donorQty: donor.qty,
+      donorBlockId: donor.blockId,
+      donorSerial: donor.serial,
+    },
+    create: {
+      phone: to,
+      donorName: donor.name,
+      donorQty: donor.qty,
+      donorBlockId: donor.blockId,
+      donorSerial: donor.serial,
+      status: "ready",
+      expiresAt: new Date(Date.now() + INTAKE_TTL_HOURS * 60 * 60 * 1000),
+    },
+  });
+
   const body = {
     messages: [
       {
@@ -303,7 +434,7 @@ export async function POST(req: NextRequest) {
           language,
           templateData: {
             body: {
-              placeholders: [{ name: donorName }],
+              placeholders: [{ name: donor.name }],
             },
           },
         },
