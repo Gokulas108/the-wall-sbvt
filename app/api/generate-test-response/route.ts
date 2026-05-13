@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n_Example: Abhay Charan_",
+        "Please reply with your legal name.\n*Example: _Abhay Charan_*",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -378,7 +378,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n_Example: ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
+        "Please reply with your address and pincode.\n*Example: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_*",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -513,7 +513,7 @@ export async function POST(req: NextRequest) {
                 header: {
                   type: "DOCUMENT",
                   mediaUrl: pdfUrl,
-                  filename: "receipt.pdf",
+                  filename: "WoL-Certificate.pdf",
                 },
                 body: {
                   placeholders: [{ name: donorDetails.name }],
