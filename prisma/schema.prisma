@@ -6,11 +6,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum DonorFormRole {
-  admin
-  volunteer
-}
-
 model BlockName {
   id        Int      @id @default(autoincrement())
   blockId   String   @map("block_id")
@@ -23,22 +18,22 @@ model BlockName {
 }
 
 model BlockSubmission {
-  id            Int      @id @default(autoincrement())
-  blockId       String   @map("block_id")
-  serialNumber  String?  @map("serial_number")
-  actionType    String   @map("action_type")
-  name          String
-  qty           Int      @default(1)
-  dateOfBirth   String   @map("date_of_birth")
-  email         String
-  phone         String
-  whatsapp      String
-  collectedByUserId Int? @map("collected_by_user_id")
-  pledgeDueDays Int?     @map("pledge_due_days")
-  paymentMethod String?  @map("payment_method")
-  paymentReference String? @map("payment_reference")
-  createdAt     DateTime @default(now()) @map("created_at")
-  collectedByUser DonorFormUser? @relation(fields: [collectedByUserId], references: [id])
+  id                Int            @id @default(autoincrement())
+  blockId           String         @map("block_id")
+  serialNumber      String?        @map("serial_number")
+  actionType        String         @map("action_type")
+  name              String
+  qty               Int            @default(1)
+  dateOfBirth       String         @map("date_of_birth")
+  email             String
+  phone             String
+  whatsapp          String
+  pledgeDueDays     Int?           @map("pledge_due_days")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  collectedByUserId Int?           @map("collected_by_user_id")
+  paymentMethod     String?        @map("payment_method")
+  paymentReference  String?        @map("payment_reference")
+  collectedByUser   DonorFormUser? @relation(fields: [collectedByUserId], references: [id])
 
   @@index([blockId])
   @@index([collectedByUserId])
@@ -46,31 +41,31 @@ model BlockSubmission {
 }
 
 model DonorFormUser {
-  id             Int            @id @default(autoincrement())
-  username       String         @unique
-  password       String
-  role           DonorFormRole
-  isActive       Boolean        @default(true) @map("is_active")
-  amountInCash   Int            @default(0) @map("amount_in_cash")
-  amountPledge   Int            @default(0) @map("amount_pledge")
-  amountTotal    Int            @default(0) @map("amount_total")
-  amountSettled  Int            @default(0) @map("amount_settled")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  sessions       DonorFormSession[]
-  submissions    BlockSubmission[]
-  settlementsReceived CashSettlement[] @relation("SettlementVolunteer")
-  settlementsPerformed CashSettlement[] @relation("SettlementAdmin")
+  id                   Int                @id @default(autoincrement())
+  username             String             @unique
+  password             String
+  role                 DonorFormRole
+  isActive             Boolean            @default(true) @map("is_active")
+  amountInCash         Int                @default(0) @map("amount_in_cash")
+  amountTotal          Int                @default(0) @map("amount_total")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  amountPledge         Int                @default(0) @map("amount_pledge")
+  amountSettled        Int                @default(0) @map("amount_settled")
+  submissions          BlockSubmission[]
+  settlementsPerformed CashSettlement[]   @relation("SettlementAdmin")
+  settlementsReceived  CashSettlement[]   @relation("SettlementVolunteer")
+  sessions             DonorFormSession[]
 
   @@map("donor_form_users")
 }
 
 model DonorFormSession {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  userId    Int      @map("user_id")
+  id        Int           @id @default(autoincrement())
+  token     String        @unique
+  expiresAt DateTime      @map("expires_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+  userId    Int           @map("user_id")
   user      DonorFormUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -79,14 +74,14 @@ model DonorFormSession {
 }
 
 model CashSettlement {
-  id            Int      @id @default(autoincrement())
-  volunteerId   Int      @map("volunteer_id")
-  adminId       Int      @map("admin_id")
-  amount        Int
-  note          String?  @default("")
-  createdAt     DateTime @default(now()) @map("created_at")
-  volunteer     DonorFormUser @relation("SettlementVolunteer", fields: [volunteerId], references: [id])
-  admin         DonorFormUser @relation("SettlementAdmin", fields: [adminId], references: [id])
+  id          Int           @id @default(autoincrement())
+  volunteerId Int           @map("volunteer_id")
+  adminId     Int           @map("admin_id")
+  amount      Int
+  note        String?       @default("")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  admin       DonorFormUser @relation("SettlementAdmin", fields: [adminId], references: [id])
+  volunteer   DonorFormUser @relation("SettlementVolunteer", fields: [volunteerId], references: [id])
 
   @@index([volunteerId])
   @@index([adminId])
@@ -104,7 +99,7 @@ model PendingTransaction {
   phone       String
   whatsapp    String
   amount      Int
-  status      String    @default("pending") // pending | completed | failed
+  status      String    @default("pending")
   txnId       String?   @map("txn_id")
   createdAt   DateTime  @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")
@@ -112,4 +107,25 @@ model PendingTransaction {
   @@index([apiKey])
   @@index([status])
   @@map("pending_transactions")
+}
+
+model WhatsAppIntake {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique
+  status    String   @default("awaiting_legal_name")
+  legalName String?  @map("legal_name")
+  address   String?
+  pincode   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([status])
+  @@index([expiresAt])
+  @@map("whatsapp_intakes")
+}
+
+enum DonorFormRole {
+  admin
+  volunteer
 }
