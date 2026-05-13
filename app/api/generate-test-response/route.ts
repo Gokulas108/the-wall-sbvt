@@ -68,7 +68,9 @@ export async function POST(req: NextRequest) {
           templateName: DOUBLETICK_TEMPLATE_NAME,
           language,
           templateData: {
-            placeholders: [{ name: DEFAULT_TEMPLATE_NAME_VALUE }],
+            body: {
+              placeholders: [{ name: DEFAULT_TEMPLATE_NAME_VALUE }],
+            },
           },
         },
       },
