@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n*Example: Abhay Charan*",
+        "Please reply with your legal name.\n*Example: _Abhay Charan_*",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n*Example: ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313*",
+        "Please reply with your address and pincode.\n*Example: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_*",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -338,6 +338,14 @@ export async function POST(req: NextRequest) {
         ],
       };
 
+      console.info("[doubletick] receipt payload", {
+        to,
+        from,
+        templateName: DOUBLETICK_RECEIPT_TEMPLATE,
+        pdfUrl,
+        donorName: donorDetails.name,
+      });
+
       const receiptResponse = await fetch(DOUBLETICK_API_URL, {
         method: "POST",
         headers: {
@@ -346,6 +354,11 @@ export async function POST(req: NextRequest) {
           Authorization: apiKey,
         },
         body: JSON.stringify(receiptPayload),
+      });
+
+      console.info("[doubletick] receipt response", {
+        status: receiptResponse.status,
+        ok: receiptResponse.ok,
       });
 
       if (!receiptResponse.ok) {
