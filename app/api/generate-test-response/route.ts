@@ -21,6 +21,10 @@ type DonorLookup = {
   qty: number;
   blockId: string;
   serial: string;
+  email: string;
+  phone: string;
+  paymentReference: string | null;
+  createdAt: string;
 };
 
 type SubmissionResponse = {
@@ -47,6 +51,8 @@ const DOUBLETICK_API_URL =
   "https://public.doubletick.io/v2/whatsapp/message/template";
 const DOUBLETICK_TEXT_URL =
   "https://public.doubletick.io/whatsapp/message/text";
+const DOUBLETICK_DOCUMENT_URL =
+  "https://public.doubletick.io/whatsapp/message/document";
 const DOUBLETICK_TYPING_URL =
   "https://public.doubletick.io/whatsapp/message/typing-indicator";
 const DOUBLETICK_TEMPLATE_NAME = "donation_successful";
@@ -57,6 +63,12 @@ const INTAKE_TTL_HOURS = 24;
 const TYPING_DELAY_MS = 1500;
 const CERTIFICATE_BASE_URL =
   "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
+const RECEIPT_BASE_URL =
+  "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/generate-reciept";
+const NOTES_TEXT =
+  "Towards the contribution for Srila Bhaktivinoda Thakur's Wall Of Legacy Campaign.";
+const RUPEE_SYMBOL = "₹";
+const AMOUNT_SUFFIX = "/-";
 
 function normalizeText(value?: string | null) {
   return (value ?? "").trim().toLowerCase();
@@ -84,6 +96,31 @@ async function sendTextMessage(
       from,
       to,
       content: { text },
+    }),
+  });
+}
+
+async function sendDocumentMessage(
+  apiKey: string,
+  from: string,
+  to: string,
+  mediaUrl: string,
+  filename: string,
+) {
+  return fetch(DOUBLETICK_DOCUMENT_URL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      content: {
+        mediaUrl,
+        filename,
+      },
     }),
   });
 }
@@ -117,6 +154,10 @@ async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
     qty: submission.qty,
     blockId: submission.blockId,
     serial: submission.serialNumber,
+    email: submission.email,
+    phone: submission.phone,
+    paymentReference: submission.paymentReference,
+    createdAt: submission.createdAt,
   } satisfies DonorLookup;
 }
 
@@ -130,6 +171,106 @@ function buildCertificateUrl(donor: DonorLookup) {
   url.searchParams.set("qty", String(donor.qty));
   url.searchParams.set("block", donor.blockId);
   url.searchParams.set("serial", donor.serial);
+  return url.toString();
+}
+
+function formatDateOnly(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function randomReceiptNumber() {
+  const num = Math.floor(1000 + Math.random() * 9000);
+  return `R-${num}`;
+}
+
+function numberToWords(value: number) {
+  const ones = [
+    "Zero",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function chunkToWords(num: number): string {
+    if (num < 20) return ones[num];
+    if (num < 100) {
+      const ten = Math.floor(num / 10);
+      const rest = num % 10;
+      return rest ? `${tens[ten]} ${ones[rest]}` : tens[ten];
+    }
+    const hundred = Math.floor(num / 100);
+    const rest = num % 100;
+    return rest
+      ? `${ones[hundred]} Hundred ${chunkToWords(rest)}`
+      : `${ones[hundred]} Hundred`;
+  }
+
+  if (value === 0) return "Zero";
+  const parts: string[] = [];
+  const millions = Math.floor(value / 1_000_000);
+  const thousands = Math.floor((value % 1_000_000) / 1_000);
+  const remainder = value % 1_000;
+
+  if (millions) parts.push(`${chunkToWords(millions)} Million`);
+  if (thousands) parts.push(`${chunkToWords(thousands)} Thousand`);
+  if (remainder) parts.push(chunkToWords(remainder));
+  return parts.join(" ");
+}
+
+function buildReceiptUrl(
+  donor: DonorLookup,
+  legalName: string,
+  address: string,
+  pincode: string | null,
+  receiptDate: string,
+) {
+  const amount = donor.qty * 1000;
+  const amountText = `${RUPEE_SYMBOL}${amount}${AMOUNT_SUFFIX}`;
+  const amountWords = `${numberToWords(amount)} Only`;
+  const url = new URL(RECEIPT_BASE_URL);
+  url.searchParams.set("receipt_no", randomReceiptNumber());
+  url.searchParams.set("receipt_date", receiptDate);
+  url.searchParams.set("legal_name", legalName);
+  url.searchParams.set("address", address);
+  url.searchParams.set("pincode", pincode ?? "");
+  url.searchParams.set("phone_no", donor.phone);
+  url.searchParams.set("email", donor.email ?? "");
+  url.searchParams.set("payment_reference", donor.paymentReference ?? "");
+  url.searchParams.set("pan_no", "");
+  url.searchParams.set("payment_date", formatDateOnly(donor.createdAt));
+  url.searchParams.set("amount", amountText);
+  url.searchParams.set("amount_in_words", amountWords);
+  url.searchParams.set("notes", NOTES_TEXT);
   return url.toString();
 }
 
@@ -204,7 +345,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n*Example: _Abhay Charan_*",
+        "Please reply with your legal name.\n_Example: Abhay Charan_",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -237,7 +378,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n*Example: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_*",
+        "Please reply with your address and pincode.\n_Example: ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -261,12 +402,19 @@ export async function POST(req: NextRequest) {
         intake.donorName &&
         intake.donorQty &&
         intake.donorBlockId &&
-        intake.donorSerial
+        intake.donorSerial &&
+        intake.donorEmail &&
+        intake.donorPhone &&
+        intake.donorCreatedAt
           ? {
               name: intake.donorName,
               qty: intake.donorQty,
               blockId: intake.donorBlockId,
               serial: intake.donorSerial,
+              email: intake.donorEmail,
+              phone: intake.donorPhone,
+              paymentReference: intake.donorPaymentReference ?? null,
+              createdAt: intake.donorCreatedAt.toISOString(),
             }
           : null;
       const donorFallback = donor ? null : await lookupDonorByWhatsapp(req, to);
@@ -314,12 +462,44 @@ export async function POST(req: NextRequest) {
           donorQty: donorDetails.qty,
           donorBlockId: donorDetails.blockId,
           donorSerial: donorDetails.serial,
+          donorEmail: donorDetails.email,
+          donorPhone: donorDetails.phone,
+          donorPaymentReference: donorDetails.paymentReference ?? null,
+          donorCreatedAt: new Date(donorDetails.createdAt),
           status: "completed",
         },
       });
 
+      const receiptDate = formatDateOnly(new Date());
       const pdfUrl = buildCertificateUrl(donorDetails);
+      const generatedReceiptUrl = buildReceiptUrl(
+        donorDetails,
+        intake?.legalName ?? donorDetails.name,
+        incomingText,
+        pincode,
+        receiptDate,
+      );
       await sendTypingIndicator(apiKey, from, to);
+
+      const receiptDocResponse = await sendDocumentMessage(
+        apiKey,
+        from,
+        to,
+        generatedReceiptUrl,
+        "receipt.pdf",
+      );
+      if (!receiptDocResponse.ok) {
+        const text = await receiptDocResponse.text();
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Doubletick receipt document failed.",
+            status: receiptDocResponse.status,
+            details: text,
+          },
+          { status: 502 },
+        );
+      }
 
       const receiptPayload = {
         messages: [
@@ -429,6 +609,10 @@ export async function POST(req: NextRequest) {
       donorQty: donor.qty,
       donorBlockId: donor.blockId,
       donorSerial: donor.serial,
+      donorEmail: donor.email,
+      donorPhone: donor.phone,
+      donorPaymentReference: donor.paymentReference ?? null,
+      donorCreatedAt: new Date(donor.createdAt),
     },
     create: {
       phone: to,
@@ -436,6 +620,10 @@ export async function POST(req: NextRequest) {
       donorQty: donor.qty,
       donorBlockId: donor.blockId,
       donorSerial: donor.serial,
+      donorEmail: donor.email,
+      donorPhone: donor.phone,
+      donorPaymentReference: donor.paymentReference ?? null,
+      donorCreatedAt: new Date(donor.createdAt),
       status: "ready",
       expiresAt: new Date(Date.now() + INTAKE_TTL_HOURS * 60 * 60 * 1000),
     },

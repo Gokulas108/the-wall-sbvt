@@ -117,6 +117,10 @@ model WhatsAppIntake {
   donorQty  Int?     @map("donor_qty")
   donorBlockId String? @map("donor_block_id")
   donorSerial String? @map("donor_serial")
+  donorEmail String? @map("donor_email")
+  donorPhone String? @map("donor_phone")
+  donorPaymentReference String? @map("donor_payment_reference")
+  donorCreatedAt DateTime? @map("donor_created_at")
   legalName String?  @map("legal_name")
   address   String?
   pincode   String?
