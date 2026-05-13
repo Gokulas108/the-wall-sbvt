@@ -54,7 +54,6 @@ const DOUBLETICK_RECEIPT_TEMPLATE = "receipt_generation";
 const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
-const TYPING_DELAY_MS = 700;
 const CERTIFICATE_BASE_URL =
   "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
 
@@ -118,10 +117,6 @@ async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
     blockId: submission.blockId,
     serial: submission.serialNumber,
   } satisfies DonorLookup;
-}
-
-async function pause(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildCertificateUrl(donor: DonorLookup) {
@@ -200,12 +195,11 @@ export async function POST(req: NextRequest) {
       });
 
       await sendTypingIndicator(apiKey, from, to);
-      await pause(TYPING_DELAY_MS);
       const askName = await sendTextMessage(
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n*Example: Satya Narayan Das*",
+        "Please reply with your legal name.\n*Example: Abhay Charan*",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -233,12 +227,11 @@ export async function POST(req: NextRequest) {
       });
 
       await sendTypingIndicator(apiKey, from, to);
-      await pause(TYPING_DELAY_MS);
       const askAddress = await sendTextMessage(
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n*Example: 24 MG Road, Pune 411001*",
+        "Please reply with your address and pincode.\n*Example: ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313*",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -284,7 +277,6 @@ export async function POST(req: NextRequest) {
         });
 
         await sendTypingIndicator(apiKey, from, to);
-        await pause(TYPING_DELAY_MS);
         const noMatch = await sendTextMessage(
           apiKey,
           from,
@@ -322,7 +314,6 @@ export async function POST(req: NextRequest) {
 
       const pdfUrl = buildCertificateUrl(donorDetails);
       await sendTypingIndicator(apiKey, from, to);
-      await pause(TYPING_DELAY_MS);
 
       const receiptPayload = {
         messages: [
@@ -383,7 +374,6 @@ export async function POST(req: NextRequest) {
   const donor = await lookupDonorByWhatsapp(req, to);
   if (!donor) {
     await sendTypingIndicator(apiKey, from, to);
-    await pause(TYPING_DELAY_MS);
     const noMatch = await sendTextMessage(
       apiKey,
       from,
