@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { formatINR } from "@/lib/mosaic/engine";
 
 type DoubleTickInbound = {
   from?: string;
@@ -69,6 +70,7 @@ const NOTES_TEXT =
   "Towards the contribution for Srila Bhaktivinoda Thakur's Wall Of Legacy Campaign.";
 const RUPEE_SYMBOL = "₹";
 const AMOUNT_SUFFIX = "/-";
+const DONATION_URL = "https://birnagar.org/donation";
 
 function normalizeText(value?: string | null) {
   return (value ?? "").trim().toLowerCase();
@@ -77,6 +79,19 @@ function normalizeText(value?: string | null) {
 function extractPincode(value: string) {
   const match = value.match(/\b\d{6}\b/);
   return match ? match[0] : null;
+}
+
+// Collapse a multi-line address into a single comma-separated line. Trailing
+// commas on each line are stripped first so newline-joined parts never produce
+// a double comma, and runs of spaces/tabs are collapsed.
+function normalizeAddress(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/,+$/, "").trim())
+    .filter((line) => line.length > 0)
+    .join(", ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
 }
 
 async function sendTextMessage(
@@ -345,7 +360,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your legal name.\n*Example: _Abhay Charan_*",
+        "*Please reply with your legal name.*\nExample: _Abhay Charan_",
       );
       if (!askName.ok) {
         const text = await askName.text();
@@ -378,7 +393,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         from,
         to,
-        "Please reply with your address and pincode.\n*Example: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_*",
+        "*Please reply with your address and pincode.*\nExample: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
       );
       if (!askAddress.ok) {
         const text = await askAddress.text();
@@ -397,7 +412,52 @@ export async function POST(req: NextRequest) {
     }
 
     if (intake?.status === "awaiting_address") {
-      const pincode = extractPincode(incomingText);
+      const address = normalizeAddress(incomingText);
+      const pincode = extractPincode(address);
+
+      // kkd collection flow: save legal name + address + pincode only. No donor
+      // lookup or receipt — this flow has no link to block_submissions.
+      if (intake.flow === "kkd") {
+        await prisma.whatsAppIntake.update({
+          where: { phone: to },
+          data: { address, pincode, status: "completed" },
+        });
+
+        const commitment = await prisma.kkdCollection.findFirst({
+          where: { whatsapp: to },
+        });
+
+        const lines = ["Thank you for sharing your details! 🙏"];
+        if (commitment && commitment.amtCommitted !== commitment.amtReceived) {
+          lines.push(
+            `Committed: ${RUPEE_SYMBOL}${formatINR(commitment.amtCommitted)} · Received: ${RUPEE_SYMBOL}${formatINR(commitment.amtReceived)}`,
+          );
+        }
+        lines.push(`Donate now: ${DONATION_URL}`);
+
+        await sendTypingIndicator(apiKey, from, to);
+        const thanks = await sendTextMessage(
+          apiKey,
+          from,
+          to,
+          lines.join("\n\n"),
+        );
+        if (!thanks.ok) {
+          const text = await thanks.text();
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Failed to send kkd confirmation.",
+              status: thanks.status,
+              details: text,
+            },
+            { status: 502 },
+          );
+        }
+
+        return NextResponse.json({ ok: true, step: "kkd_saved" });
+      }
+
       const donor =
         intake.donorName &&
         intake.donorQty &&
@@ -424,7 +484,7 @@ export async function POST(req: NextRequest) {
         await prisma.whatsAppIntake.update({
           where: { phone: to },
           data: {
-            address: incomingText,
+            address,
             pincode,
             status: "completed",
           },
@@ -456,7 +516,7 @@ export async function POST(req: NextRequest) {
       await prisma.whatsAppIntake.update({
         where: { phone: to },
         data: {
-          address: incomingText,
+          address,
           pincode,
           donorName: donorDetails.name,
           donorQty: donorDetails.qty,
@@ -475,7 +535,7 @@ export async function POST(req: NextRequest) {
       const generatedReceiptUrl = buildReceiptUrl(
         donorDetails,
         intake?.legalName ?? donorDetails.name,
-        incomingText,
+        address,
         pincode,
         receiptDate,
       );

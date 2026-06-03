@@ -113,6 +113,7 @@ model WhatsAppIntake {
   id        Int      @id @default(autoincrement())
   phone     String   @unique
   status    String   @default("awaiting_legal_name")
+  flow      String   @default("receipt")
   donorName String?  @map("donor_name")
   donorQty  Int?     @map("donor_qty")
   donorBlockId String? @map("donor_block_id")
@@ -131,6 +132,21 @@ model WhatsAppIntake {
   @@index([status])
   @@index([expiresAt])
   @@map("whatsapp_intakes")
+}
+
+model KkdCollection {
+  id            Int       @id @default(autoincrement())
+  name          String
+  amtCommitted  Int       @default(0) @map("amt_committed")
+  amtReceived   Int       @default(0) @map("amt_received")
+  whatsapp      String
+  messageSent   Boolean   @default(false) @map("message_sent")
+  messageSentAt DateTime? @map("message_sent_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([whatsapp])
+  @@map("kkd_collection")
 }
 
 enum DonorFormRole {
