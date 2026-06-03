@@ -1,27 +1,21 @@
 import { prisma } from "@/lib/db/prisma";
-import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { DatabaseAuthWrapper } from "@/app/admin/database/AuthWrapper";
 import { formatINR } from "@/lib/mosaic/engine";
 import { SendButton } from "./SendButton";
 import { SendAllButton } from "./SendAllButton";
 import { SearchBox } from "./SearchBox";
+import { ExportButton } from "./ExportButton";
+import {
+  SENT_OPTIONS,
+  BALANCE_OPTIONS,
+  normalizeFilters,
+  buildKkdWhere,
+  statusLabel,
+  type Filters,
+} from "./filters";
 
 const PAGE_SIZE = 100;
-
-type Filters = { sent: string; balance: string; q: string };
-
-const SENT_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "yes", label: "Sent" },
-  { value: "no", label: "Pending" },
-];
-
-const BALANCE_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "pending", label: "Balance due" },
-  { value: "done", label: "Fully received" },
-];
 
 function getPagination(currentPage: number, totalPages: number) {
   const pages: (number | string)[] = [];
@@ -62,41 +56,27 @@ function buildHref(
   return `/admin/bot${qs ? `?${qs}` : ""}`;
 }
 
+const WRAP_CELL =
+  "p-1 px-2 border-r border-gray-300 min-w-[120px] max-w-[260px] whitespace-normal break-words align-top";
+const NOWRAP_CELL =
+  "p-1 px-2 border-r border-gray-300 whitespace-nowrap align-top";
+
 export default async function AdminBotPage(props: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const searchParams = await props.searchParams;
-  const sent =
-    typeof searchParams.sent === "string" &&
-    SENT_OPTIONS.some((o) => o.value === searchParams.sent)
-      ? searchParams.sent
-      : "all";
-  const balance =
-    typeof searchParams.balance === "string" &&
-    BALANCE_OPTIONS.some((o) => o.value === searchParams.balance)
-      ? searchParams.balance
-      : "all";
-  const q = typeof searchParams.q === "string" ? searchParams.q.trim() : "";
-  const filters: Filters = { sent, balance, q };
+  const filters = normalizeFilters(
+    typeof searchParams.sent === "string" ? searchParams.sent : undefined,
+    typeof searchParams.balance === "string" ? searchParams.balance : undefined,
+    typeof searchParams.q === "string" ? searchParams.q : undefined,
+  );
+  const { sent, balance, q } = filters;
 
   let page =
     typeof searchParams.page === "string" ? parseInt(searchParams.page, 10) : 1;
   if (isNaN(page) || page < 1) page = 1;
 
-  const where: Prisma.KkdCollectionWhereInput = {};
-  if (sent === "yes") where.messageSent = true;
-  else if (sent === "no") where.messageSent = false;
-  if (balance === "pending") {
-    where.amtReceived = { lt: prisma.kkdCollection.fields.amtCommitted };
-  } else if (balance === "done") {
-    where.amtReceived = { gte: prisma.kkdCollection.fields.amtCommitted };
-  }
-  if (q) {
-    where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { whatsapp: { contains: q } },
-    ];
-  }
+  const where = buildKkdWhere(filters);
 
   const [rows, totalCount, pendingCount] = await Promise.all([
     prisma.kkdCollection.findMany({
@@ -113,7 +93,13 @@ export default async function AdminBotPage(props: {
   const intakes = whatsappList.length
     ? await prisma.whatsAppIntake.findMany({
         where: { phone: { in: whatsappList } },
-        select: { phone: true, legalName: true, address: true },
+        select: {
+          phone: true,
+          legalName: true,
+          address: true,
+          pincode: true,
+          status: true,
+        },
       })
     : [];
   const intakeByPhone = new Map(intakes.map((i) => [i.phone, i]));
@@ -128,8 +114,10 @@ export default async function AdminBotPage(props: {
     "Received",
     "Messaged",
     "Last Messaged",
+    "Status",
     "Legal Name",
     "Address",
+    "Pincode",
     "Action",
   ];
 
@@ -138,13 +126,31 @@ export default async function AdminBotPage(props: {
       <div className="mx-auto p-2 sm:p-4 text-black min-h-screen bg-white">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 pb-2 border-b gap-3">
           <div>
-            <h1 className="text-xl font-bold text-indigo-900">Bot Dashboard</h1>
+            <p className="text-[11px] uppercase tracking-wider text-indigo-400 font-semibold">
+              Bot Dashboard
+            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-600 text-white text-sm shadow-sm">
+                📋
+              </span>
+              <h1 className="text-2xl font-bold text-indigo-900">
+                KKD Collection
+              </h1>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-medium border border-indigo-200">
+                Table
+              </span>
+            </div>
             <p className="text-gray-500 text-xs mt-1">
-              KKD collection tracking · {totalCount} rows · {pendingCount}{" "}
-              pending
+              {totalCount} rows · {pendingCount} pending
             </p>
           </div>
-          <div className="w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <ExportButton
+              sent={sent}
+              balance={balance}
+              q={q}
+              totalCount={totalCount}
+            />
             <SendAllButton pendingCount={pendingCount} />
           </div>
         </div>
@@ -202,43 +208,33 @@ export default async function AdminBotPage(props: {
                     key={row.id}
                     className="hover:bg-indigo-50 border-b border-gray-300 transition-colors odd:bg-white even:bg-gray-50"
                   >
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
-                      {row.name}
-                    </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
-                      {row.whatsapp}
-                    </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
-                      ₹{formatINR(row.amtCommitted)}
-                    </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
-                      ₹{formatINR(row.amtReceived)}
-                    </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
+                    <td className={WRAP_CELL}>{row.name}</td>
+                    <td className={NOWRAP_CELL}>{row.whatsapp}</td>
+                    <td className={NOWRAP_CELL}>₹{formatINR(row.amtCommitted)}</td>
+                    <td className={NOWRAP_CELL}>₹{formatINR(row.amtReceived)}</td>
+                    <td className={NOWRAP_CELL}>
                       {row.messageSent ? (
                         <span className="text-green-700 font-medium">Yes</span>
                       ) : (
-                        <span className="text-gray-400">No</span>
+                        <span className="text-red-600 font-medium">No</span>
                       )}
                     </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
+                    <td className={NOWRAP_CELL}>
                       {row.messageSentAt
                         ? row.messageSentAt.toLocaleString()
                         : "—"}
                     </td>
-                    <td
-                      className="p-1 px-2 border-r border-gray-300 max-w-[150px] sm:max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis"
-                      title={intake?.legalName ?? ""}
-                    >
+                    <td className={NOWRAP_CELL}>
+                      {intake?.status ? statusLabel(intake.status) : "—"}
+                    </td>
+                    <td className={WRAP_CELL} title={intake?.legalName ?? ""}>
                       {intake?.legalName ?? "—"}
                     </td>
-                    <td
-                      className="p-1 px-2 border-r border-gray-300 max-w-[150px] sm:max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis"
-                      title={intake?.address ?? ""}
-                    >
+                    <td className={WRAP_CELL} title={intake?.address ?? ""}>
                       {intake?.address ?? "—"}
                     </td>
-                    <td className="p-1 px-2 border-r border-gray-300 whitespace-nowrap">
+                    <td className={NOWRAP_CELL}>{intake?.pincode ?? "—"}</td>
+                    <td className={NOWRAP_CELL}>
                       <SendButton
                         whatsapp={row.whatsapp}
                         name={row.name}

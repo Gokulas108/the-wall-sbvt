@@ -20,6 +20,12 @@ export function SendButton({
 
   const handleSend = async () => {
     if (sending) return;
+    if (alreadySent) {
+      const confirmed = window.confirm(
+        "⚠️ This number was already messaged. Sending repeated messages without a reply can get your WhatsApp account BLOCKED — only resend if you're sure.\n\nSend again?",
+      );
+      if (!confirmed) return;
+    }
     setSending(true);
     setStatus("idle");
     try {

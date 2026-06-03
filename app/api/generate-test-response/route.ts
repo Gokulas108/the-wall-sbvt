@@ -427,20 +427,37 @@ export async function POST(req: NextRequest) {
           where: { whatsapp: to },
         });
 
-        const lines = ["Thank you for sharing your details! 🙏"];
-        if (commitment && commitment.amtCommitted !== commitment.amtReceived) {
-          lines.push(
-            `Committed: ${RUPEE_SYMBOL}${formatINR(commitment.amtCommitted)} · Received: ${RUPEE_SYMBOL}${formatINR(commitment.amtReceived)}`,
-          );
+        const parts = [
+          "Hare Krishna 🙏",
+          "Thank you for providing your details so promptly.",
+        ];
+        if (commitment) {
+          const committed = `${RUPEE_SYMBOL}${formatINR(commitment.amtCommitted)}`;
+          const received = `${RUPEE_SYMBOL}${formatINR(commitment.amtReceived)}`;
+          if (commitment.amtReceived < commitment.amtCommitted) {
+            parts.push(
+              `As per our records, your committed contribution is *${committed}*, of which *${received}* has been received.`,
+            );
+            parts.push(
+              `Whenever convenient, you may complete the remaining contribution using the link below:\n${DONATION_URL}`,
+            );
+          } else {
+            parts.push(
+              `As per our records, your contribution of *${committed}* has been received in full.`,
+            );
+          }
         }
-        lines.push(`Donate now: ${DONATION_URL}`);
+        parts.push(
+          "We are grateful for your generosity, cooperation, and continued support in this service.",
+        );
+        parts.push("With sincere thanks,\nBirnagar Temple Project Team 🙏");
 
         await sendTypingIndicator(apiKey, from, to);
         const thanks = await sendTextMessage(
           apiKey,
           from,
           to,
-          lines.join("\n\n"),
+          parts.join("\n\n"),
         );
         if (!thanks.ok) {
           const text = await thanks.text();
