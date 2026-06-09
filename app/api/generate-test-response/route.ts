@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { formatINR } from "@/lib/mosaic/engine";
+import {
+  buildCertificateUrl,
+  buildReceiptUrl,
+  formatDateOnly,
+  modeOfPaymentLabel,
+  type DonorReceiptInfo,
+} from "@/lib/receipts/urls";
+import { handleWolInbound } from "@/lib/wol/inbound";
 
 type DoubleTickInbound = {
   from?: string;
@@ -17,16 +25,7 @@ type DoubleTickTemplateResponse = {
   data?: unknown;
 };
 
-type DonorLookup = {
-  name: string;
-  qty: number;
-  blockId: string;
-  serial: string;
-  email: string;
-  phone: string;
-  paymentReference: string | null;
-  createdAt: string;
-};
+type DonorLookup = DonorReceiptInfo;
 
 type SubmissionResponse = {
   submission?: {
@@ -62,14 +61,7 @@ const DEFAULT_WABA_NUMBER = "919002977288";
 const DETAILS_BUTTON_TEXT = "Enter Details";
 const INTAKE_TTL_HOURS = 24;
 const TYPING_DELAY_MS = 1500;
-const CERTIFICATE_BASE_URL =
-  "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/download-ticket";
-const RECEIPT_BASE_URL =
-  "https://sbvt-pdf-gen-13a632ead426.herokuapp.com/generate-reciept";
-const NOTES_TEXT =
-  "Towards the contribution for Srila Bhaktivinoda Thakur's Wall Of Legacy Campaign.";
 const RUPEE_SYMBOL = "₹";
-const AMOUNT_SUFFIX = "/-";
 const DONATION_URL = "https://birnagar.org/donation";
 
 function normalizeText(value?: string | null) {
@@ -173,120 +165,14 @@ async function lookupDonorByWhatsapp(req: NextRequest, whatsapp: string) {
     phone: submission.phone,
     paymentReference: submission.paymentReference,
     createdAt: submission.createdAt,
+    modeOfPayment: modeOfPaymentLabel(
+      submission.actionType === "online_donate" ? "online" : submission.paymentMethod,
+    ),
   } satisfies DonorLookup;
 }
 
 async function pause(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildCertificateUrl(donor: DonorLookup) {
-  const url = new URL(CERTIFICATE_BASE_URL);
-  url.searchParams.set("name", donor.name);
-  url.searchParams.set("qty", String(donor.qty));
-  url.searchParams.set("block", donor.blockId);
-  url.searchParams.set("serial", donor.serial);
-  return url.toString();
-}
-
-function formatDateOnly(value: string | Date) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
-}
-
-function randomReceiptNumber() {
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `R-${num}`;
-}
-
-function numberToWords(value: number) {
-  const ones = [
-    "Zero",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
-
-  function chunkToWords(num: number): string {
-    if (num < 20) return ones[num];
-    if (num < 100) {
-      const ten = Math.floor(num / 10);
-      const rest = num % 10;
-      return rest ? `${tens[ten]} ${ones[rest]}` : tens[ten];
-    }
-    const hundred = Math.floor(num / 100);
-    const rest = num % 100;
-    return rest
-      ? `${ones[hundred]} Hundred ${chunkToWords(rest)}`
-      : `${ones[hundred]} Hundred`;
-  }
-
-  if (value === 0) return "Zero";
-  const parts: string[] = [];
-  const millions = Math.floor(value / 1_000_000);
-  const thousands = Math.floor((value % 1_000_000) / 1_000);
-  const remainder = value % 1_000;
-
-  if (millions) parts.push(`${chunkToWords(millions)} Million`);
-  if (thousands) parts.push(`${chunkToWords(thousands)} Thousand`);
-  if (remainder) parts.push(chunkToWords(remainder));
-  return parts.join(" ");
-}
-
-function buildReceiptUrl(
-  donor: DonorLookup,
-  legalName: string,
-  address: string,
-  pincode: string | null,
-  receiptDate: string,
-) {
-  const amount = donor.qty * 1000;
-  const amountText = `${RUPEE_SYMBOL}${amount}${AMOUNT_SUFFIX}`;
-  const amountWords = `${numberToWords(amount)} Only`;
-  const url = new URL(RECEIPT_BASE_URL);
-  url.searchParams.set("receipt_no", randomReceiptNumber());
-  url.searchParams.set("receipt_date", receiptDate);
-  url.searchParams.set("legal_name", legalName);
-  url.searchParams.set("address", address);
-  url.searchParams.set("pincode", pincode ?? "");
-  url.searchParams.set("phone_no", donor.phone);
-  url.searchParams.set("email", donor.email ?? "");
-  url.searchParams.set("payment_reference", donor.paymentReference ?? "");
-  url.searchParams.set("pan_no", "");
-  url.searchParams.set("payment_date", formatDateOnly(donor.createdAt));
-  url.searchParams.set("amount", amountText);
-  url.searchParams.set("amount_in_words", amountWords);
-  url.searchParams.set("notes", NOTES_TEXT);
-  return url.toString();
 }
 
 export async function POST(req: NextRequest) {
@@ -330,6 +216,12 @@ export async function POST(req: NextRequest) {
     intake &&
     intake.expiresAt.getTime() > Date.now() &&
     intake.status !== "completed";
+
+  // Wall-of-Legacy conversations branch to their own handler (buttons + name/address/PAN +
+  // receipt-choice + receipt/certificate delivery), exactly as the KKD flow branches below.
+  if (intake?.flow === "wol") {
+    return handleWolInbound(to, payload.message, intake, { apiKey, from, language });
+  }
 
   if (payload.message?.type === "BUTTON") {
     const buttonValue = normalizeText(

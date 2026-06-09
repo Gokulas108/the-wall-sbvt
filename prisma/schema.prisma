@@ -56,6 +56,7 @@ model DonorFormUser {
   settlementsPerformed CashSettlement[]   @relation("SettlementAdmin")
   settlementsReceived  CashSettlement[]   @relation("SettlementVolunteer")
   sessions             DonorFormSession[]
+  csvUploads           CsvUploadBatch[]
 
   @@map("donor_form_users")
 }
@@ -110,28 +111,70 @@ model PendingTransaction {
 }
 
 model WhatsAppIntake {
-  id        Int      @id @default(autoincrement())
-  phone     String   @unique
-  status    String   @default("awaiting_legal_name")
-  flow      String   @default("receipt")
-  donorName String?  @map("donor_name")
-  donorQty  Int?     @map("donor_qty")
-  donorBlockId String? @map("donor_block_id")
-  donorSerial String? @map("donor_serial")
-  donorEmail String? @map("donor_email")
-  donorPhone String? @map("donor_phone")
-  donorPaymentReference String? @map("donor_payment_reference")
-  donorCreatedAt DateTime? @map("donor_created_at")
-  legalName String?  @map("legal_name")
-  address   String?
-  pincode   String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  expiresAt DateTime @map("expires_at")
+  id                    Int       @id @default(autoincrement())
+  phone                 String    @unique
+  status                String    @default("awaiting_legal_name")
+  flow                  String    @default("receipt")
+  donorName             String?   @map("donor_name")
+  donorQty              Int?      @map("donor_qty")
+  donorBlockId          String?   @map("donor_block_id")
+  donorSerial           String?   @map("donor_serial")
+  donorEmail            String?   @map("donor_email")
+  donorPhone            String?   @map("donor_phone")
+  donorPaymentReference String?   @map("donor_payment_reference")
+  donorCreatedAt        DateTime? @map("donor_created_at")
+  legalName             String?   @map("legal_name")
+  address               String?
+  pincode               String?
+  panNo                 String?   @map("pan_no")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  expiresAt             DateTime  @map("expires_at")
 
   @@index([status])
   @@index([expiresAt])
   @@map("whatsapp_intakes")
+}
+
+// Append-only log of the WoL campaign's INITIAL outbound template sends
+// (wol_address_exists / wol_no_address). Drives the 250/day cap (count rows since
+// IST-midnight), the "already sent" exclusion for the random batch, and a who/when
+// audit. Receipt/certificate documents sent inside the 24h reply window are NOT
+// logged here — only the business-initiated template counts against the cap.
+model WolMessageLog {
+  id              Int      @id @default(autoincrement())
+  normalizedPhone String   @map("normalized_phone")
+  templateName    String   @map("template_name")
+  donorName       String?  @map("donor_name")
+  status          String   @default("sent") // sent | failed
+  sentByUserId    Int?     @map("sent_by_user_id")
+  sentByUsername  String?  @map("sent_by_username")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([normalizedPhone])
+  @@index([createdAt])
+  @@map("wol_message_logs")
+}
+
+// Per-WhatsApp-number annotations for the admin "WhatsApp Care" tab. Keyed by the
+// canonical normalized number (see lib/whatsapp-care/phone.ts) so it joins cleanly
+// against the differently-formatted numbers in block_submissions / whatsapp_intakes.
+// Manual fields (isInvalid, notes) are written only by the admin annotation route;
+// the Doubletick-inferred fields only by the delivery-status webhook — they never
+// overwrite each other.
+model WhatsAppNumberAnnotation {
+  id                 Int       @id @default(autoincrement())
+  normalizedPhone    String    @unique @map("normalized_phone")
+  isInvalid          Boolean   @default(false) @map("is_invalid")
+  notes              String?
+  whatsappStatus     String?   @map("whatsapp_status") // 'exists' | 'likely_invalid'
+  lastDeliveryStatus String?   @map("last_delivery_status")
+  lastDeliveryAt     DateTime? @map("last_delivery_at")
+  updatedByUserId    Int?      @map("updated_by_user_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("whatsapp_number_annotations")
 }
 
 model KkdCollection {
@@ -152,4 +195,241 @@ model KkdCollection {
 enum DonorFormRole {
   admin
   volunteer
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Accounting & Reconciliation
+//
+// Raw CSV mirrors (GatewayTransaction, UpiTransaction) + the live birnagar cache
+// (BirnagarDonation) are the ingested *sources*. The reconciler materializes a
+// canonical ledger (Contribution) plus a persisted match table (ContributionMatch,
+// auto + manual) and an audit row (ReconcileRun). All money is stored as integer
+// paise to avoid float drift; see docs/reconciliation-plan.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Raw row from the payment-gateway settlement CSV. Match key: transactionId
+// (== BlockSubmission.paymentReference for online_donate, == birnagar.donations.txn_id).
+model GatewayTransaction {
+  id                    Int                @id @default(autoincrement())
+  transactionId         String             @unique @map("transaction_id")
+  merchantTranId        String?            @map("merchant_tran_id")
+  rrn                   String?
+  amountPaise           Int                @map("amount_paise") // gross "Transaction Amount"
+  chargesPaise          Int                @default(0) @map("charges_paise")
+  netAmountPaise        Int                @default(0) @map("net_amount_paise")
+  status                String
+  reconciliationStatus  String?            @map("reconciliation_status")
+  originalTransactionId String?            @map("original_transaction_id") // refund back-pointer
+  isSuccess             Boolean            @default(false) @map("is_success")
+  isRefund              Boolean            @default(false) @map("is_refund")
+  customerName          String?            @map("customer_name")
+  customerMobile        String?            @map("customer_mobile")
+  transactionDate       DateTime?          @map("transaction_date")
+  rawRow                Json               @map("raw_row")
+  uploadBatchId         Int                @map("upload_batch_id")
+  uploadBatch           CsvUploadBatch     @relation(fields: [uploadBatchId], references: [id], onDelete: Cascade)
+  match                 ContributionMatch? @relation("GatewayMatch")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  @@index([rrn])
+  @@index([customerMobile])
+  @@index([transactionDate])
+  @@index([originalTransactionId])
+  @@index([uploadBatchId])
+  @@map("gateway_transactions")
+}
+
+// Raw row from the UPI/bank CSV. Match key: bankRRN (== BlockSubmission.paymentReference
+// for volunteer UPI). bankRRN is indexed but NOT unique — an RRN can recur.
+model UpiTransaction {
+  id              Int                @id @default(autoincrement())
+  // NOT unique on its own: this ICICI UPI report reuses one merchantTranId (the
+  // static collect-merchant id) across hundreds of distinct payments. The per-txn
+  // identifier is bankRRN; idempotency is the (merchantTranId, bankRRN) pair below.
+  merchantTranId  String             @map("merchant_tran_id")
+  bankRRN         String             @map("bank_rrn")
+  amountPaise     Int                @map("amount_paise")
+  status          String
+  refundStatus    String?            @map("refund_status")
+  customerVPA     String?            @map("customer_vpa")
+  contactNumber   String?            @map("contact_number")
+  payerName       String?            @map("payer_name")
+  isSuccess       Boolean            @default(false) @map("is_success")
+  isRefund        Boolean            @default(false) @map("is_refund")
+  transactionDate DateTime?          @map("transaction_date")
+  rawRow          Json               @map("raw_row")
+  uploadBatchId   Int                @map("upload_batch_id")
+  uploadBatch     CsvUploadBatch     @relation(fields: [uploadBatchId], references: [id], onDelete: Cascade)
+  match           ContributionMatch? @relation("UpiMatch")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@unique([merchantTranId, bankRRN]) // idempotency key for re-uploads
+  @@index([bankRRN])
+  @@index([contactNumber])
+  @@index([transactionDate])
+  @@index([uploadBatchId])
+  @@map("upi_transactions")
+}
+
+// Thin cache of the live birnagar (Laravel) donations pull. Upserted by birnagarId
+// (the Laravel PK) so manual match links stay stable across refreshes. Only
+// source='web' rows are promoted to Contributions; source='api_*' rows are kept
+// only for cross-checking the wall online_donate (never promoted → no double-count).
+model BirnagarDonation {
+  id           Int       @id @default(autoincrement())
+  birnagarId   Int       @unique @map("birnagar_id")
+  source       String
+  txnId        String?   @map("txn_id")
+  name         String
+  email        String?
+  phone        String?
+  amountPaise  Int       @map("amount_paise")
+  status       String
+  donatedAt    DateTime? @map("donated_at")
+  lastPulledAt DateTime  @default(now()) @updatedAt @map("last_pulled_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([txnId])
+  @@index([source])
+  @@index([status])
+  @@index([phone])
+  @@map("birnagar_donations")
+}
+
+// Metadata for one ingest: a CSV upload (gateway|upi) or a live birnagar pull.
+// periodStart/End bound what the CSV is known to cover, so the reconciler can tell
+// "CSV not uploaded for this date" (UNVERIFIED) apart from "wrong ref typed".
+model CsvUploadBatch {
+  id           Int                  @id @default(autoincrement())
+  kind         String // 'gateway' | 'upi' | 'birnagar_live'
+  filename     String?
+  uploadedById Int?                 @map("uploaded_by_id")
+  uploadedBy   DonorFormUser?       @relation(fields: [uploadedById], references: [id])
+  rowsTotal    Int                  @default(0) @map("rows_total")
+  rowsInserted Int                  @default(0) @map("rows_inserted")
+  rowsUpdated  Int                  @default(0) @map("rows_updated")
+  rowsFailed   Int                  @default(0) @map("rows_failed")
+  errors       Json?
+  status       String               @default("completed")
+  periodStart  DateTime?            @map("period_start")
+  periodEnd    DateTime?            @map("period_end")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  gatewayTxns  GatewayTransaction[]
+  upiTxns      UpiTransaction[]
+
+  @@index([kind])
+  @@index([uploadedById])
+  @@map("csv_upload_batches")
+}
+
+// Materialized canonical ledger — one row per contribution line. A rebuildable
+// cache, not a source of truth: always regenerable from the raw sources + the
+// persisted (manual) match table. Soft-keyed by exactly one of
+// blockSubmissionId / birnagarDonationId / cashVolunteerId (all @unique) for upsert.
+model Contribution {
+  id                 Int                 @id @default(autoincrement())
+  blockSubmissionId  Int?                @unique @map("block_submission_id")
+  birnagarDonationId Int?                @unique @map("birnagar_donation_id")
+  cashVolunteerId    Int?                @unique @map("cash_volunteer_id")
+  sourceType         String              @map("source_type") // 'wall_submission' | 'birnagar_general' | 'cash_bucket'
+  donorName          String?             @map("donor_name")
+  donorPhone         String?             @map("donor_phone")
+  donorEmail         String?             @map("donor_email")
+  blockId            String?             @map("block_id")
+  serialNumber       String?             @map("serial_number")
+  qty                Int                 @default(0)
+  actionType         String?             @map("action_type") // donate | online_donate | pledge | cash_bucket | general
+  collectedByUserId  Int?                @map("collected_by_user_id")
+  contributedAt      DateTime?           @map("contributed_at")
+  paymentChannel     String              @map("payment_channel") // 'online' | 'upi' | 'cash' | 'none'
+  paymentReference   String?             @map("payment_reference")
+  expectedPaise      Int                 @default(0) @map("expected_paise")
+  matchedPaise       Int                 @default(0) @map("matched_paise")
+  variancePaise      Int                 @default(0) @map("variance_paise")
+  status             String // MATCHED|OVERPAID|UNDERPAID|UNVERIFIED|CASH|PLEDGE|FAILED_REFUNDED|ORPHAN|AMBIGUOUS
+  statusFlags        Json?               @map("status_flags") // ref_not_in_csv, missing_reference, abandoned, …
+  receiptEligible    Boolean             @default(false) @map("receipt_eligible")
+  reconciledAt       DateTime?           @map("reconciled_at")
+  reconcileRunId     Int?                @map("reconcile_run_id")
+  matches            ContributionMatch[]
+
+  @@index([paymentReference])
+  @@index([status])
+  @@index([collectedByUserId])
+  @@index([blockId])
+  @@index([contributedAt])
+  @@map("contributions")
+}
+
+// Links a contribution to a CSV transaction. contributionId null + a CSV side = ORPHAN.
+// gatewayTxnId / upiTxnId are @unique (a CSV txn attributes to exactly one group).
+// The reconciler deletes+recreates only auto_* rows; manual rows are always honored.
+model ContributionMatch {
+  id             Int                 @id @default(autoincrement())
+  contributionId Int?                @map("contribution_id")
+  contribution   Contribution?       @relation(fields: [contributionId], references: [id], onDelete: SetNull)
+  gatewayTxnId   Int?                @unique @map("gateway_txn_id")
+  gatewayTxn     GatewayTransaction? @relation("GatewayMatch", fields: [gatewayTxnId], references: [id], onDelete: Cascade)
+  upiTxnId       Int?                @unique @map("upi_txn_id")
+  upiTxn         UpiTransaction?     @relation("UpiMatch", fields: [upiTxnId], references: [id], onDelete: Cascade)
+  matchType      String              @map("match_type") // 'auto_reference' | 'manual' | 'auto_fuzzy_suggested'
+  amountPaise    Int                 @default(0) @map("amount_paise")
+  confidence     Float?
+  note           String?
+  createdById    Int?                @map("created_by_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  @@index([contributionId])
+  @@index([matchType])
+  @@map("contribution_matches")
+}
+
+// Audit row for one reconciliation pass.
+model ReconcileRun {
+  id                 Int       @id @default(autoincrement())
+  triggeredById      Int?      @map("triggered_by_id")
+  countsByStatus     Json      @map("counts_by_status")
+  totalExpectedPaise Int       @default(0) @map("total_expected_paise")
+  totalMatchedPaise  Int       @default(0) @map("total_matched_paise")
+  totalOrphanPaise   Int       @default(0) @map("total_orphan_paise")
+  closureOk          Boolean   @default(false) @map("closure_ok")
+  startedAt          DateTime  @default(now()) @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  note               String?
+
+  @@map("reconcile_runs")
+}
+
+// One receipt per matched TRANSACTION submitted to the treasury. The row id IS the
+// sequential receipt number (formatted via formatTreasuryReceiptNo). transactionKey is
+// the same channel|reference grouping key the Receipts list uses, @unique so a transaction
+// is submitted once. All donor/legal fields are SNAPSHOTTED at submission — a treasury
+// record must not change if the underlying intake is later edited.
+model TreasuryReceipt {
+  id                  Int       @id @default(autoincrement())
+  transactionKey      String    @unique @map("transaction_key")
+  contributionId      Int?      @map("contribution_id") // representative line
+  txnId               String?   @map("txn_id") // payment reference shown on the row
+  paymentChannel      String    @map("payment_channel")
+  status              String // matched sub-status snapshot
+  donationType        String    @map("donation_type")
+  amountPaise         Int       @map("amount_paise") // received
+  qty                 Int       @default(0)
+  donorName           String?   @map("donor_name")
+  donorPhone          String?   @map("donor_phone")
+  donorEmail          String?   @map("donor_email")
+  whatsapp            String?
+  legalName           String?   @map("legal_name")
+  address             String?
+  pincode             String?
+  contributedAt       DateTime? @map("contributed_at")
+  submittedById       Int       @map("submitted_by_id")
+  submittedByUsername String?   @map("submitted_by_username")
+  submittedAt         DateTime  @default(now()) @map("submitted_at")
+
+  @@index([submittedAt])
+  @@map("treasury_receipts")
 }
