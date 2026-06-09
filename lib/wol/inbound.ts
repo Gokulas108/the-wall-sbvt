@@ -124,25 +124,10 @@ async function runReceiptStep(
   const failures: string[] = [];
 
   await sendTypingIndicator(apiKey, from, to);
-  await sendTextMessage(
-    apiKey,
-    from,
-    to,
-    receipts.length > 1 ? "Here are your receipts." : "Here is your receipt.",
-  );
   for (const r of receipts) {
     const res = await sendDocumentMessage(apiKey, from, to, r.url, r.filename);
     if (!res.ok) failures.push(`receipt:${r.label}`);
   }
-
-  await sendTextMessage(
-    apiKey,
-    from,
-    to,
-    certs.length > 1
-      ? "And here are your inscription certificates. Thank you for your support."
-      : "And here is your inscription certificate. Thank you for your support.",
-  );
   for (const c of certs) {
     const res = await sendDocumentMessage(apiKey, from, to, c.url, c.filename);
     if (!res.ok) failures.push(`certificate:${c.donorName}`);

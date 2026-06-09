@@ -30,6 +30,12 @@ export function formatWhatsappDisplay(normalized: string): string {
   return "+" + normalized;
 }
 
+// True when the canonical key is an Indian number: country code 91 + 10-digit mobile.
+// Used to scope outbound campaigns (e.g. the WoL random batch) to Indian numbers only.
+export function isIndianWhatsappNumber(normalized: string): boolean {
+  return normalized.length === 12 && normalized.startsWith("91");
+}
+
 // Heuristic: does `normalized` (digits-only, country-coded — the output of
 // normalizeWhatsappNumber) look like a REAL phone number, or the placeholder junk a
 // volunteer types to clear a required field (9999999999, 0000000000, 0123456789)?

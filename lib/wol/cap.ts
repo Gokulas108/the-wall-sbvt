@@ -10,6 +10,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { getAddressCollection } from "@/lib/whatsapp-care/address-collection";
+import { isIndianWhatsappNumber } from "@/lib/whatsapp-care/phone";
 
 export const WOL_DAILY_LIMIT = 250;
 
@@ -92,6 +93,7 @@ export async function pickRandomEligibleNumbers(
       !r.needsReview &&
       !r.isInvalid &&
       r.donorNames.length === 1 &&
+      isIndianWhatsappNumber(r.normalizedNumber) && // Indian numbers only, for now
       !sent.has(r.normalizedNumber),
   );
   return shuffle(eligible)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import type {
   AddressCollectionFacets,
@@ -19,6 +20,10 @@ const TABS: { key: Tab; label: string }[] = [{ key: "addressCollection", label: 
 
 const NAMES_SHOWN = 4;
 const PAGE_SIZE = 25;
+// Gap between consecutive WoL sends in the random batch. The loop is strictly sequential
+// (one awaited call at a time), so this throttles the rate to ~1 message/second — well
+// under Doubletick's limits. Raise it to be more conservative.
+const BATCH_SEND_GAP_MS = 1000;
 
 type TriState = "yes" | "no" | null;
 
@@ -87,11 +92,21 @@ export function WhatsAppCare({
 
   // Only this operator may trigger Wall-of-Legacy sends (matches the server-side gate).
   const isSender = username === "gokul";
-  const [flash, setFlash] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sendingNums, setSendingNums] = useState<Set<string>>(new Set());
-  const [batch, setBatch] = useState<{ running: boolean; done: number; total: number } | null>(
-    null,
-  );
+  const [batch, setBatch] = useState<{
+    running: boolean;
+    done: number;
+    total: number;
+    ok: number;
+  } | null>(null);
+
+  const showToast = useCallback((message: string, tone: "success" | "error" = "success") => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, tone });
+    toastTimer.current = setTimeout(() => setToast(null), 6000);
+  }, []);
 
   const [tab, setTab] = useState<Tab>("addressCollection");
   const [data, setData] = useState<AddressCollectionPage>(EMPTY);
@@ -200,7 +215,8 @@ export function WhatsAppCare({
   // Send the WoL template to one number. Returns true on a confirmed send so the random
   // batch can tally successes. Refreshes the header cap counter via onWolSent.
   const sendOne = useCallback(
-    async (num: string): Promise<boolean> => {
+    async (num: string, opts?: { silent?: boolean }): Promise<boolean> => {
+      const silent = opts?.silent ?? false;
       setSendingNums((s) => new Set(s).add(num));
       try {
         const res = await fetch(`/api/wol-wf?number=${encodeURIComponent(num)}`, {
@@ -208,14 +224,14 @@ export function WhatsAppCare({
         });
         const json = await res.json().catch(() => ({}));
         if (res.ok && json.ok) {
-          setFlash(`Sent ${json.templateName} to ${num} (${json.name}).`);
+          if (!silent) showToast(`Sent ${json.templateName} to ${num} (${json.name}).`, "success");
           onWolSent();
           return true;
         }
-        setFlash(`Failed for ${num}: ${json.error ?? res.status}`);
+        if (!silent) showToast(`Failed for ${num}: ${json.error ?? res.status}`, "error");
         return false;
       } catch {
-        setFlash(`Failed for ${num}.`);
+        if (!silent) showToast(`Failed for ${num}.`, "error");
         return false;
       } finally {
         setSendingNums((s) => {
@@ -225,7 +241,7 @@ export function WhatsAppCare({
         });
       }
     },
-    [onWolSent],
+    [onWolSent, showToast],
   );
 
   // Random batch: ask the server for eligible single-donor "all okay" numbers up to the
@@ -235,36 +251,41 @@ export function WhatsAppCare({
     const json = await res.json().catch(() => ({}));
     const numbers: string[] = json.numbers ?? [];
     if (!numbers.length) {
-      setFlash("No eligible numbers to send (daily budget reached or none left).");
+      showToast("No eligible numbers to send (daily budget reached or none left).", "error");
       return;
     }
     if (!window.confirm(`Send the WoL message to ${numbers.length} number${numbers.length === 1 ? "" : "s"}?`)) {
       return;
     }
-    setBatch({ running: true, done: 0, total: numbers.length });
+    setBatch({ running: true, done: 0, total: numbers.length, ok: 0 });
     let ok = 0;
     for (let i = 0; i < numbers.length; i++) {
-      if (await sendOne(numbers[i])) ok++;
-      setBatch({ running: true, done: i + 1, total: numbers.length });
-      await new Promise((r) => setTimeout(r, 600));
+      if (await sendOne(numbers[i], { silent: true })) ok++;
+      setBatch({ running: true, done: i + 1, total: numbers.length, ok });
+      await new Promise((r) => setTimeout(r, BATCH_SEND_GAP_MS));
     }
-    setBatch({ running: false, done: numbers.length, total: numbers.length });
-    setFlash(`Random batch done: ${ok}/${numbers.length} sent.`);
+    setBatch({ running: false, done: numbers.length, total: numbers.length, ok });
+    showToast(`Random batch done: ${ok}/${numbers.length} sent.`, ok === numbers.length ? "success" : "error");
     void load(page, q, filters);
-  }, [sendOne, load, page, q, filters]);
+    // Leave the completed bar up briefly, then clear it.
+    setTimeout(() => setBatch(null), 4000);
+  }, [sendOne, showToast, load, page, q, filters]);
 
   if (selectedNumber) {
     return (
-      <WhatsAppCareDetail
-        key={selectedNumber}
-        detail={detail}
-        loading={detailLoading}
-        onBack={closeDetail}
-        onSaved={() => void loadDetail(selectedNumber)}
-        isSender={isSender}
-        sending={sendingNums.has(selectedNumber)}
-        onSend={(num) => void sendOne(num)}
-      />
+      <>
+        <WhatsAppCareDetail
+          key={selectedNumber}
+          detail={detail}
+          loading={detailLoading}
+          onBack={closeDetail}
+          onSaved={() => void loadDetail(selectedNumber)}
+          isSender={isSender}
+          sending={sendingNums.has(selectedNumber)}
+          onSend={(num) => void sendOne(num)}
+        />
+        <SendToast toast={toast} />
+      </>
     );
   }
 
@@ -318,16 +339,35 @@ export function WhatsAppCare({
             </div>
           </div>
 
-          {isSender && flash && (
-            <div className="flex items-start justify-between gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-              <span>{flash}</span>
-              <button
-                onClick={() => setFlash(null)}
-                className="shrink-0 text-indigo-500 hover:text-indigo-700"
-                aria-label="Dismiss"
+          {/* Random-batch progress bar — shown while sending and for a moment after. */}
+          {isSender && batch && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-emerald-800">
+                <span className="inline-flex items-center gap-1.5">
+                  {batch.running && (
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-200 border-t-emerald-600" />
+                  )}
+                  {batch.running
+                    ? "Sending WoL messages…"
+                    : `Batch complete — ${batch.ok}/${batch.total} sent`}
+                </span>
+                <span className="tabular-nums">
+                  {batch.done} / {batch.total}
+                  {batch.done > batch.ok ? ` · ${batch.done - batch.ok} failed` : ""}
+                </span>
+              </div>
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-emerald-100"
+                role="progressbar"
+                aria-valuenow={batch.done}
+                aria-valuemin={0}
+                aria-valuemax={batch.total}
               >
-                ✕
-              </button>
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-300 ease-out"
+                  style={{ width: `${batch.total ? Math.round((batch.done / batch.total) * 100) : 0}%` }}
+                />
+              </div>
             </div>
           )}
 
@@ -450,7 +490,57 @@ export function WhatsAppCare({
           </p>
         </>
       )}
+      <SendToast toast={toast} />
     </div>
+  );
+}
+
+// Fixed top-right toast for WoL send results (mirrors the Receipts view toast).
+function SendToast({
+  toast,
+}: {
+  toast: { message: string; tone: "success" | "error" } | null;
+}) {
+  return (
+    <AnimatePresence>
+      {toast && (
+        <motion.div
+          key="wol-send-toast"
+          initial={{ opacity: 0, y: -16, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -12, scale: 0.97 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="fixed right-4 top-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-lg"
+        >
+          <span
+            className={`mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full ${
+              toast.tone === "error" ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"
+            }`}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {toast.tone === "error" ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <polyline points="20 6 9 17 4 12" />
+              )}
+            </svg>
+          </span>
+          <p className="text-xs font-medium text-gray-800">{toast.message}</p>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
