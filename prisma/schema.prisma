@@ -127,6 +127,9 @@ model WhatsAppIntake {
   address               String?
   pincode               String?
   panNo                 String?   @map("pan_no")
+  // Test-only override: set by the /admin/wol-test dashboard for a few test numbers so the
+  // PAN branch can be exercised. null for every real donor; only the PAN threshold reads it.
+  testAmount            Int?      @map("test_amount")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
   expiresAt             DateTime  @map("expires_at")

@@ -102,6 +102,8 @@ Required env vars (loaded from `.env.local` in dev; `prisma.config.ts` reads bot
 - `DIRECT_URL` — direct connection (port 5432); used by Prisma migrations.
 - `PAYMENT_HMAC_SECRET` — required for payment token + webhook signature verification.
 - `DONOR_FORM_DEFAULT_ADMIN_USERNAME`, `DONOR_FORM_DEFAULT_ADMIN_PIN` — seed values for the first admin (only used when the user table is empty).
+- `GROQ_API_KEY` — Groq API key for the WoL WhatsApp intake LLM (`lib/whatsapp/groq.ts`): name/address/PAN/receipt-choice extraction + intent classification + grounded `birnagar.md` Q&A. If unset, extraction degrades to politely re-asking (the flow never breaks).
+- `GROQ_MODEL` — optional; defaults to `llama-3.1-8b-instant`.
 
 ## Conventions worth knowing
 

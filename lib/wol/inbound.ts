@@ -34,6 +34,13 @@ import {
   combinedReceiptRupees,
   resolveReceiptMode,
 } from "@/lib/wol/receipts";
+import {
+  answerFromKnowledgeBase,
+  extractIntake,
+  extractPan,
+  extractReceiptChoice,
+  type IntakeIntent,
+} from "@/lib/whatsapp/groq";
 
 const THANKYOU_TEMPLATE = "wol_thankyou_receipt";
 const INTAKE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -184,6 +191,40 @@ async function afterDetailsCollected(
   return runReceiptStep(to, cfg);
 }
 
+type CollectField = "name" | "address" | "pan" | "choice";
+
+// The LLM only classified the message; the BACKEND decides we stay in this state and
+// what to reply. Questions get a birnagar.md-grounded answer first; greetings get a warm
+// prefix; anything else a gentle apology — then we always re-ask the current field. Tone
+// stays calm and service-minded.
+async function handleIntent(
+  intent: IntakeIntent,
+  field: CollectField,
+  userText: string,
+  to: string,
+  cfg: DoubletickConfig,
+): Promise<void> {
+  const reAsk: Record<CollectField, string> = {
+    name: "Could you please share your full legal name?\nExample: _Abhay Charan_",
+    address:
+      "Kindly share your full address so we may complete your receipt.\nExample: _ISKCON Mayapur, Nadia, West Bengal 741313_",
+    pan: "As your total contribution exceeds ₹10,000, please reply with the donor's 10-character PAN.\nExample: ABCDE1234F",
+    choice:
+      "Please reply *1* for one combined receipt, or *2* for separate receipts.",
+  };
+  let body: string;
+  if (intent === "GREETING") {
+    body = `Hare Krishna 🙏\n${reAsk[field]}`;
+  } else if (intent === "QUESTION") {
+    const answer = await answerFromKnowledgeBase(userText);
+    body = `${answer}\n\n${reAsk[field]}`;
+  } else {
+    body = `Apologies, I couldn't understand that clearly. ${reAsk[field]}`;
+  }
+  await sendTypingIndicator(cfg.apiKey, cfg.from, to);
+  await sendTextMessage(cfg.apiKey, cfg.from, to, body);
+}
+
 export async function handleWolInbound(
   to: string,
   message: WolInboundMessage | undefined,
@@ -226,40 +267,70 @@ export async function handleWolInbound(
   // ── Text replies (state machine) ─────────────────────────────────────────
   if (message?.type === "TEXT") {
     if (intake.status === "awaiting_legal_name") {
-      await prisma.whatsAppIntake.update({
-        where: { phone: intake.phone },
-        data: { legalName: text, status: "awaiting_address", expiresAt: expiry() },
-      });
-      await sendTypingIndicator(apiKey, from, to);
-      await sendTextMessage(
-        apiKey,
-        from,
-        to,
-        "*Please reply with your address and pincode.*\nExample: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
-      );
-      return NextResponse.json({ ok: true, flow: "wol", step: "awaiting_address" });
-    }
-
-    if (intake.status === "awaiting_address") {
-      const address = normalizeAddress(text);
-      const pincode = extractPincode(address);
-      await prisma.whatsAppIntake.update({
-        where: { phone: intake.phone },
-        data: { address, pincode, expiresAt: expiry() },
-      });
-      return afterDetailsCollected(to, cfg);
-    }
-
-    if (intake.status === "awaiting_pan") {
-      const pan = text.toUpperCase().replace(/\s+/g, "");
-      if (!isValidPan(pan)) {
+      const ex = await extractIntake(text);
+      if (ex.name) {
+        await prisma.whatsAppIntake.update({
+          where: { phone: intake.phone },
+          data: {
+            legalName: ex.name,
+            status: "awaiting_address",
+            expiresAt: expiry(),
+          },
+        });
+        await sendTypingIndicator(apiKey, from, to);
         await sendTextMessage(
           apiKey,
           from,
           to,
-          "That doesn't look like a valid PAN. Please reply with the 10-character PAN.\nExample: ABCDE1234F",
+          "*Please reply with your address and pincode.*\nExample: _ISKCON Mayapur, Mayapur, Nadia, West Bengal 741313_",
         );
-        return NextResponse.json({ ok: true, flow: "wol", step: "awaiting_pan_retry" });
+        return NextResponse.json({ ok: true, flow: "wol", step: "awaiting_address" });
+      }
+      await handleIntent(ex.intent, "name", text, to, cfg);
+      return NextResponse.json({
+        ok: true,
+        flow: "wol",
+        step: "awaiting_legal_name",
+        intent: ex.intent,
+      });
+    }
+
+    if (intake.status === "awaiting_address") {
+      const ex = await extractIntake(text);
+      if (ex.address) {
+        const address = normalizeAddress(ex.address);
+        // The LLM's address may drop the 6-digit PIN; fall back to the raw reply for it.
+        const pincode = extractPincode(address) ?? extractPincode(text);
+        await prisma.whatsAppIntake.update({
+          where: { phone: intake.phone },
+          data: { address, pincode, expiresAt: expiry() },
+        });
+        return afterDetailsCollected(to, cfg);
+      }
+      await handleIntent(ex.intent, "address", text, to, cfg);
+      return NextResponse.json({
+        ok: true,
+        flow: "wol",
+        step: "awaiting_address",
+        intent: ex.intent,
+      });
+    }
+
+    if (intake.status === "awaiting_pan") {
+      // Deterministic fast path: a cleanly-typed PAN never reaches the LLM. Only on a miss
+      // do we ask Groq to pull a PAN out of a sentence — and isValidPan still gates storage,
+      // so the LLM can never persist an invalid/hallucinated PAN.
+      const directPan = text.toUpperCase().replace(/\s+/g, "");
+      let pan = isValidPan(directPan) ? directPan : null;
+      if (!pan) {
+        const ex = await extractPan(text);
+        const candidate = ex.pan ? ex.pan.toUpperCase().replace(/\s+/g, "") : null;
+        if (candidate && isValidPan(candidate)) {
+          pan = candidate;
+        } else {
+          await handleIntent(ex.intent, "pan", text, to, cfg);
+          return NextResponse.json({ ok: true, flow: "wol", step: "awaiting_pan_retry" });
+        }
       }
       await prisma.whatsAppIntake.update({
         where: { phone: intake.phone },
@@ -279,19 +350,24 @@ export async function handleWolInbound(
     }
 
     if (intake.status === "awaiting_receipt_choice") {
-      const choice = text.trim();
-      if (choice !== "1" && choice !== "2") {
-        await sendTextMessage(
-          apiKey,
-          from,
-          to,
-          "Please reply *1* for a single combined receipt, or *2* for separate receipts.",
-        );
-        return NextResponse.json({
-          ok: true,
-          flow: "wol",
-          step: "awaiting_receipt_choice_retry",
-        });
+      // Literal "1"/"2" wins outright; otherwise let the LLM map fuzzy language
+      // ("together" → 1, "each" → 2). Only a resolved 1/2 advances, so an ambiguous reply
+      // never silently picks the wrong receipt format.
+      const trimmed = text.trim();
+      let choice: "1" | "2" | null =
+        trimmed === "1" ? "1" : trimmed === "2" ? "2" : null;
+      if (!choice) {
+        const ex = await extractReceiptChoice(text);
+        if (ex.choice === "1" || ex.choice === "2") {
+          choice = ex.choice;
+        } else {
+          await handleIntent(ex.intent, "choice", text, to, cfg);
+          return NextResponse.json({
+            ok: true,
+            flow: "wol",
+            step: "awaiting_receipt_choice_retry",
+          });
+        }
       }
       return runReceiptStep(to, cfg, choice);
     }

@@ -102,6 +102,7 @@ async function findIntakeForKey(key: string) {
       address: true,
       pincode: true,
       panNo: true,
+      testAmount: true,
       updatedAt: true,
     },
     orderBy: { updatedAt: "desc" },
@@ -149,7 +150,10 @@ export async function getWolNumberSummary(
   const legalName = intake?.legalName?.trim() ? intake.legalName : null;
   const address = intake?.address?.trim() ? intake.address : null;
   const panNo = intake?.panNo?.trim() ? intake.panNo : null;
-  const panRequired = totalRupees > PAN_THRESHOLD_RUPEES;
+  // testAmount (set only by the /admin/wol-test dashboard, null for real donors) overrides
+  // the rupee basis for the PAN threshold so the PAN branch can be exercised end-to-end.
+  const effectiveForPan = intake?.testAmount ?? totalRupees;
+  const panRequired = effectiveForPan > PAN_THRESHOLD_RUPEES;
 
   return {
     found: mine.length > 0,
@@ -320,7 +324,10 @@ export async function getWolNumberContext(
   ];
   const totalRupees = lines.reduce((a, l) => a + l.nominalRupees, 0);
   const hasDetails = Boolean(legalName && address);
-  const panRequired = totalRupees > PAN_THRESHOLD_RUPEES;
+  // testAmount (set only by the /admin/wol-test dashboard, null for real donors) overrides
+  // the rupee basis for the PAN threshold so the PAN branch can be exercised end-to-end.
+  const effectiveForPan = intake?.testAmount ?? totalRupees;
+  const panRequired = effectiveForPan > PAN_THRESHOLD_RUPEES;
 
   return {
     found: true,
