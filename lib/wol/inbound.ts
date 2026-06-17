@@ -78,6 +78,18 @@ function isValidPan(value: string) {
   return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value);
 }
 
+// Anti-hallucination guard. A small model sometimes invents a name — returning "John" or
+// "assistant" for a message like "who is this?". A name the donor actually typed will appear
+// in their message, so require every letter-token (2+ chars, any script) of the extracted
+// name to be present in the original text before we trust it. Blocks the invented value
+// while still accepting a real name the donor wrote in any case/script.
+function nameGroundedInText(name: string, text: string): boolean {
+  const haystack = text.toLowerCase();
+  const tokens = name.toLowerCase().match(/\p{L}{2,}/gu);
+  if (!tokens || tokens.length === 0) return false;
+  return tokens.every((token) => haystack.includes(token));
+}
+
 function expiry() {
   return new Date(Date.now() + INTAKE_TTL_MS);
 }
@@ -268,7 +280,12 @@ export async function handleWolInbound(
   if (message?.type === "TEXT") {
     if (intake.status === "awaiting_legal_name") {
       const ex = await extractIntake(text);
-      if (ex.name) {
+      // A GREETING or QUESTION is never a name — route it to handleIntent so "who is this?"
+      // gets answered, not saved. And only trust an extracted name that's actually grounded
+      // in what the donor typed, so a hallucinated "John"/"assistant" can never be stored.
+      const isQuestionOrGreeting =
+        ex.intent === "GREETING" || ex.intent === "QUESTION";
+      if (!isQuestionOrGreeting && ex.name && nameGroundedInText(ex.name, text)) {
         await prisma.whatsAppIntake.update({
           where: { phone: intake.phone },
           data: {
@@ -297,7 +314,11 @@ export async function handleWolInbound(
 
     if (intake.status === "awaiting_address") {
       const ex = await extractIntake(text);
-      if (ex.address) {
+      // Same guard as the name state: a GREETING/QUESTION is never an address — answer or
+      // redirect instead of storing a stray value.
+      const isQuestionOrGreeting =
+        ex.intent === "GREETING" || ex.intent === "QUESTION";
+      if (!isQuestionOrGreeting && ex.address) {
         const address = normalizeAddress(ex.address);
         // The LLM's address may drop the 6-digit PIN; fall back to the raw reply for it.
         const pincode = extractPincode(address) ?? extractPincode(text);

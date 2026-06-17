@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   type MouseEvent as ReactMouseEvent,
+  type FormEvent as ReactFormEvent,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MosaicGrid } from "@/components/mosaic/MosaicGrid";
@@ -102,6 +103,8 @@ export default function TheMainScreen() {
   const [isMobile, setIsMobile] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -118,23 +121,25 @@ export default function TheMainScreen() {
     const savedDate = localStorage.getItem(MAIN_SCREEN_AUTH_KEY);
     if (savedDate === today) {
       setIsAuthorized(true);
-      setAuthChecked(true);
-      return;
-    }
-
-    let value = window.prompt("Enter password");
-    while (value !== null && value !== PAGE_PASSWORD) {
-      value = window.prompt("Incorrect password. Enter password");
-    }
-
-    if (value === PAGE_PASSWORD) {
-      localStorage.setItem(MAIN_SCREEN_AUTH_KEY, today);
-      setIsAuthorized(true);
-    } else {
-      setIsAuthorized(false);
     }
     setAuthChecked(true);
   }, []);
+
+  const handlePasswordSubmit = useCallback(
+    (event: ReactFormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (passwordInput === PAGE_PASSWORD) {
+        const today = new Date().toISOString().slice(0, 10);
+        localStorage.setItem(MAIN_SCREEN_AUTH_KEY, today);
+        setIsAuthorized(true);
+        setPasswordError(false);
+      } else {
+        setPasswordError(true);
+        setPasswordInput("");
+      }
+    },
+    [passwordInput],
+  );
 
   const { blocks, loading, fetchBlock } = useBlockData();
   const [wallReady, setWallReady] = useState(false);
@@ -536,10 +541,60 @@ export default function TheMainScreen() {
   if (!isAuthorized) {
     return (
       <div
-        className="min-h-screen w-full flex items-center justify-center"
+        className="min-h-screen w-full flex items-center justify-center px-4"
         style={{ background: "#f2ece2", color: "#2a1509" }}
       >
-        <p>Access denied.</p>
+        <form
+          onSubmit={handlePasswordSubmit}
+          className="w-full max-w-sm flex flex-col gap-4 p-8 rounded-2xl"
+          style={{
+            background: "rgba(255,255,255,0.7)",
+            border: "1px solid rgba(61,45,19,0.12)",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.12)",
+          }}
+        >
+          <div>
+            <h1
+              className="text-2xl font-black leading-none"
+              style={{ fontFamily: '"Cinzel", Georgia, serif', color: "#2d1c0e" }}
+            >
+              Wall of Legacy
+            </h1>
+            <p className="text-sm mt-2" style={{ color: "#8d785f" }}>
+              Enter the password to view the wall.
+            </p>
+          </div>
+          <input
+            type="password"
+            autoFocus
+            value={passwordInput}
+            onChange={(e) => {
+              setPasswordInput(e.target.value);
+              if (passwordError) setPasswordError(false);
+            }}
+            placeholder="Password"
+            className="w-full px-3 py-2.5 rounded-lg text-sm outline-none"
+            style={{
+              background: "rgba(255,250,244,0.96)",
+              border: passwordError
+                ? "1px solid rgba(200,60,40,0.6)"
+                : "1px solid rgba(222,182,131,0.5)",
+              color: "#2a1509",
+            }}
+          />
+          {passwordError && (
+            <p className="text-xs" style={{ color: "#b3371f" }}>
+              Incorrect password. Please try again.
+            </p>
+          )}
+          <button
+            type="submit"
+            className="w-full py-2.5 rounded-lg text-sm font-bold text-white"
+            style={{ background: "linear-gradient(135deg, #c96b1b, #e0b860)" }}
+          >
+            Unlock
+          </button>
+        </form>
       </div>
     );
   }

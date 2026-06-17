@@ -95,6 +95,14 @@ export async function POST(req: NextRequest) {
       : TEMPLATE_NO_ADDRESS;
   const name = donorPlaceholderName(summary.donorNames);
 
+  console.info("[wol-wf/test] sending template", {
+    templateName,
+    from: cfg.from,
+    to: summary.normalizedNumber,
+    language: cfg.language,
+    name,
+  });
+
   const res = await sendTemplateMessage(
     cfg.apiKey,
     cfg.from,
@@ -106,7 +114,17 @@ export async function POST(req: NextRequest) {
   if (!res.ok) {
     const details = await res.text();
     return NextResponse.json(
-      { ok: false, error: "Doubletick request failed", status: res.status, details },
+      {
+        ok: false,
+        error: "Doubletick request failed",
+        status: res.status,
+        details,
+        // What we attempted — so a Doubletick-side rejection is easy to diagnose.
+        templateName,
+        from: cfg.from,
+        sentTo: summary.normalizedNumber,
+        language: cfg.language,
+      },
       { status: 502 },
     );
   }
