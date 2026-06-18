@@ -102,7 +102,7 @@ async function runReceiptStep(
   cfg: DoubletickConfig,
   choice?: "1" | "2",
 ): Promise<NextResponse> {
-  const { apiKey, from } = cfg;
+  const { apiKey, from, language } = cfg;
   const ctx = await getWolNumberContext(to);
 
   if (!ctx.found || ctx.lines.length === 0) {
@@ -142,7 +142,18 @@ async function runReceiptStep(
   const certs = buildCertificates(ctx);
   const failures: string[] = [];
 
+  // Thank-you template immediately precedes the documents — sent here (not by the callers)
+  // so a multi-donor number sees it only AFTER replying to the receipt-choice question,
+  // never alongside it.
   await sendTypingIndicator(apiKey, from, to);
+  await sendTemplateMessage(
+    apiKey,
+    from,
+    to,
+    THANKYOU_TEMPLATE,
+    language,
+    donorPlaceholderName(ctx.donorNames),
+  );
   for (const r of receipts) {
     const res = await sendDocumentMessage(apiKey, from, to, r.url, r.filename);
     if (!res.ok) failures.push(`receipt:${r.label}`);
@@ -173,7 +184,7 @@ async function afterDetailsCollected(
   to: string,
   cfg: DoubletickConfig,
 ): Promise<NextResponse> {
-  const { apiKey, from, language } = cfg;
+  const { apiKey, from } = cfg;
   const summary = await getWolNumberSummary(to);
 
   if (summary.panRequired && !summary.panNo) {
@@ -191,19 +202,26 @@ async function afterDetailsCollected(
     return NextResponse.json({ ok: true, flow: "wol", step: "awaiting_pan" });
   }
 
-  await sendTypingIndicator(apiKey, from, to);
-  await sendTemplateMessage(
-    apiKey,
-    from,
-    to,
-    THANKYOU_TEMPLATE,
-    language,
-    donorPlaceholderName(summary.donorNames),
-  );
+  // Details are complete and no PAN needed → straight to delivery. runReceiptStep sends the
+  // thank-you template itself, right before the documents (or after the choice reply).
   return runReceiptStep(to, cfg);
 }
 
 type CollectField = "name" | "address" | "pan" | "choice";
+
+// Gentle, service-minded variations for an unclear/irrelevant reply, so a donor who keeps
+// missing the prompt doesn't see the exact same sentence every time.
+const UNCLEAR_PREFIXES = [
+  "Apologies, I couldn't quite follow that.",
+  "Sorry, I didn't quite catch that.",
+  "Forgive me — that wasn't entirely clear to me.",
+  "My apologies, I couldn't make that out clearly.",
+  "Pardon me, I didn't quite understand that.",
+];
+
+function pickUnclearPrefix(): string {
+  return UNCLEAR_PREFIXES[Math.floor(Math.random() * UNCLEAR_PREFIXES.length)];
+}
 
 // The LLM only classified the message; the BACKEND decides we stay in this state and
 // what to reply. Questions get a birnagar.md-grounded answer first; greetings get a warm
@@ -231,7 +249,7 @@ async function handleIntent(
     const answer = await answerFromKnowledgeBase(userText);
     body = `${answer}\n\n${reAsk[field]}`;
   } else {
-    body = `Apologies, I couldn't understand that clearly. ${reAsk[field]}`;
+    body = `${pickUnclearPrefix()} ${reAsk[field]}`;
   }
   await sendTypingIndicator(cfg.apiKey, cfg.from, to);
   await sendTextMessage(cfg.apiKey, cfg.from, to, body);
@@ -357,16 +375,8 @@ export async function handleWolInbound(
         where: { phone: intake.phone },
         data: { panNo: pan, expiresAt: expiry() },
       });
-      const summary = await getWolNumberSummary(to);
-      await sendTypingIndicator(apiKey, from, to);
-      await sendTemplateMessage(
-        apiKey,
-        from,
-        to,
-        THANKYOU_TEMPLATE,
-        cfg.language,
-        donorPlaceholderName(summary.donorNames),
-      );
+      // runReceiptStep sends the thank-you template before the documents (or after the
+      // receipt-choice reply for multi-donor numbers).
       return runReceiptStep(to, cfg);
     }
 

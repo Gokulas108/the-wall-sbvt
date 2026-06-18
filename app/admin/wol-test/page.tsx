@@ -1,5 +1,6 @@
 import { DatabaseAuthWrapper } from "@/app/admin/database/AuthWrapper";
 import { WolTestForm } from "./WolTestForm";
+import { ResendPanel } from "./ResendPanel";
 
 // Internal testing dashboard for the Wall-of-Legacy WhatsApp flow. Sends a real opening
 // template to a donor number; the typed amount is a test override (persisted as
@@ -18,6 +19,10 @@ export default function WolTestPage() {
             phone.
           </p>
           <WolTestForm />
+
+          <hr className="my-8 border-gray-200" />
+
+          <ResendPanel />
         </div>
       </main>
     </DatabaseAuthWrapper>

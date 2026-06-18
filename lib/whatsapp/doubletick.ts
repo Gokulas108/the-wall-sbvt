@@ -97,8 +97,31 @@ export async function sendTemplateMessage(
   name: string,
   header?: TemplateDocumentHeader,
 ) {
+  return sendTemplateWithPlaceholders(
+    apiKey,
+    from,
+    to,
+    templateName,
+    language,
+    [name],
+    header,
+  );
+}
+
+// Same as sendTemplateMessage but for templates with multiple positional body placeholders
+// (e.g. wol_no_address_v1 → [name, amount, date]). `placeholders` map to {{1}}, {{2}}, … in
+// order. Doubletick names each body value with a `name` key regardless of what it represents.
+export async function sendTemplateWithPlaceholders(
+  apiKey: string,
+  from: string,
+  to: string,
+  templateName: string,
+  language: string,
+  placeholders: string[],
+  header?: TemplateDocumentHeader,
+) {
   const templateData: Record<string, unknown> = {
-    body: { placeholders: [{ name }] },
+    body: { placeholders: placeholders.map((value) => ({ name: value })) },
   };
   if (header) templateData.header = header;
   return fetch(DOUBLETICK_TEMPLATE_URL, {
