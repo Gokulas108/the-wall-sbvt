@@ -29,7 +29,13 @@ export function ResendPanel() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setResult((await res.json()) as Json);
+      const text = await res.text();
+      try {
+        setResult(JSON.parse(text) as Json);
+      } catch {
+        // Non-JSON response (e.g. an HTML error page) — surface the status + raw body.
+        setResult({ ok: false, error: `HTTP ${res.status}`, raw: text.slice(0, 1000) });
+      }
     } catch (err) {
       setResult({ ok: false, error: err instanceof Error ? err.message : "Request failed" });
     } finally {

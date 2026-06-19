@@ -178,6 +178,9 @@ export async function sendResend(
     correctAddress?: string;
   },
   cfg: DoubletickConfig,
+  // Test previews send to a number that may not be a real donor — fall back to sample
+  // amount/date so the template still goes out. The bulk run leaves this off (strict).
+  opts: { fallbackPlaceholders?: boolean } = {},
 ): Promise<ResendResult> {
   const phone = normalizeWhatsappNumber(row.phone);
   const tag = row.tag.trim();
@@ -212,15 +215,22 @@ export async function sendResend(
 
   let placeholders: string[];
   if (templateName === TEMPLATE_NO_ADDRESS_V1) {
-    if (!info.found || !info.latestDate) {
+    if (info.found && info.latestDate) {
+      placeholders = [
+        name,
+        `₹${formatINR(info.totalRupees)}`,
+        formatDonationDate(info.latestDate),
+      ];
+    } else if (opts.fallbackPlaceholders) {
+      // Preview to a number that isn't a real donor — use sample amount/date.
+      placeholders = [name, "₹15,000", formatDonationDate(new Date().toISOString())];
+    } else {
       return {
         ...base,
         ok: false,
         error: "No contribution found — can't fill amount/date",
       };
     }
-    const amount = `₹${formatINR(info.totalRupees)}`;
-    placeholders = [name, amount, formatDonationDate(info.latestDate)];
   } else {
     placeholders = [name]; // follow_up_wol
   }
