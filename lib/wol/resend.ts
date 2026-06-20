@@ -215,15 +215,16 @@ export async function sendResend(
 
   let placeholders: string[];
   if (templateName === TEMPLATE_NO_ADDRESS_V1) {
+    // The template body already renders "₹{{amount}}/-", so amount is the BARE number.
     if (info.found && info.latestDate) {
       placeholders = [
         name,
-        `₹${formatINR(info.totalRupees)}`,
+        formatINR(info.totalRupees),
         formatDonationDate(info.latestDate),
       ];
     } else if (opts.fallbackPlaceholders) {
       // Preview to a number that isn't a real donor — use sample amount/date.
-      placeholders = [name, "₹15,000", formatDonationDate(new Date().toISOString())];
+      placeholders = [name, "15,000", formatDonationDate(new Date().toISOString())];
     } else {
       return {
         ...base,
