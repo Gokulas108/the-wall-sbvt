@@ -379,25 +379,22 @@ export interface SubmittedReceiptsPage {
   pageSize: number;
 }
 
-export async function querySubmittedReceipts(
-  opts: { page?: number; pageSize?: number } & ReceiptFilters,
-): Promise<SubmittedReceiptsPage> {
-  const page = Math.max(1, opts.page ?? 1);
-  const pageSize = Math.min(500, Math.max(1, opts.pageSize ?? 25));
-
+// Shared WHERE for the "submitted to treasury" list — used by both the paged query
+// and the "select all submitted" id sweep so their filtering stays identical.
+function buildSubmittedWhere(filters: ReceiptFilters): Prisma.TreasuryReceiptWhereInput {
   const where: Prisma.TreasuryReceiptWhereInput = {};
-  if (opts.channel) where.paymentChannel = opts.channel;
-  const dts = opts.donationType ?? [];
+  if (filters.channel) where.paymentChannel = filters.channel;
+  const dts = filters.donationType ?? [];
   if (dts.length) where.donationType = { in: dts };
-  const sts = opts.status ?? [];
+  const sts = filters.status ?? [];
   if (sts.length) where.status = { in: sts };
-  if (opts.from || opts.to) {
+  if (filters.from || filters.to) {
     const range: Prisma.DateTimeFilter = {};
-    if (opts.from) range.gte = new Date(opts.from);
-    if (opts.to) range.lte = new Date(`${opts.to}T23:59:59.999Z`);
+    if (filters.from) range.gte = new Date(filters.from);
+    if (filters.to) range.lte = new Date(`${filters.to}T23:59:59.999Z`);
     where.contributedAt = range;
   }
-  const q = opts.q?.trim();
+  const q = filters.q?.trim();
   if (q) {
     where.OR = [
       { legalName: { contains: q, mode: "insensitive" } },
@@ -406,6 +403,26 @@ export async function querySubmittedReceipts(
       { txnId: { contains: q, mode: "insensitive" } },
     ];
   }
+  return where;
+}
+
+// Every submitted treasury receipt id matching the filters (all pages) — backs
+// "Select all N submitted" / "Move back all".
+export async function getSubmittedReceiptIds(filters: ReceiptFilters): Promise<number[]> {
+  const rows = await prisma.treasuryReceipt.findMany({
+    where: buildSubmittedWhere(filters),
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
+}
+
+export async function querySubmittedReceipts(
+  opts: { page?: number; pageSize?: number } & ReceiptFilters,
+): Promise<SubmittedReceiptsPage> {
+  const page = Math.max(1, opts.page ?? 1);
+  const pageSize = Math.min(500, Math.max(1, opts.pageSize ?? 25));
+
+  const where = buildSubmittedWhere(opts);
 
   const [rows, total] = await Promise.all([
     prisma.treasuryReceipt.findMany({

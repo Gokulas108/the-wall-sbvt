@@ -2,14 +2,18 @@
 // Eyeballs the Groq extraction prompts used by lib/whatsapp/groq.ts. Self-contained plain
 // JS that mirrors that module's prompts + safe-parse/fallback (not part of any test suite).
 //
-// Env: GROQ_API_KEY (required to hit Groq; unset → shows the safe IRRELEVANT fallback path)
-//      GROQ_MODEL  (optional, default llama-3.1-8b-instant)
+// Env: GROQ_API_KEY (required to hit the provider; unset → shows the safe IRRELEVANT fallback)
+//      GROQ_MODEL         (optional, default llama-3.1-8b-instant)
+//      GROQ_API_BASE_URL  (optional, default Groq; set to any OpenAI-compatible /chat/completions
+//                          endpoint to test a fallback provider, e.g. OpenRouter). Mirrors
+//                          lib/whatsapp/groq.ts.
 //
 // Load .env.local manually since this is plain node (no Next runtime):
 //   node --env-file=.env.local test-groq-extract.js
 // or export GROQ_API_KEY first.
 
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_URL =
+  process.env.GROQ_API_BASE_URL || "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 const API_KEY = process.env.GROQ_API_KEY;
 

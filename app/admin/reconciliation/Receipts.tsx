@@ -82,6 +82,7 @@ export function Receipts() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [movingBack, setMovingBack] = useState<number | null>(null);
+  const [movingBackBulk, setMovingBackBulk] = useState(false);
   // Bumped after a mutation (generate / move-back) to force the active list to reload.
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState<{
@@ -176,7 +177,9 @@ export function Receipts() {
       return next;
     });
   }, []);
-  const pageIds = pending.data.map((r) => r.id);
+  // Selection is shared across tabs (reset on tab switch). On the submitted tab the ids
+  // are treasury-receipt ids; on the pending tab they are contribution ids.
+  const pageIds = (tab === "submitted" ? submitted.data : pending.data).map((r) => r.id);
   const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleAll = useCallback(() => {
     setSelected((prev) => {
@@ -195,6 +198,20 @@ export function Receipts() {
     try {
       const sp = buildParams(1, q, filters);
       const res = await fetch(`${API}/pending-ids?${sp.toString()}`, { cache: "no-store" });
+      const json = await res.json();
+      if (res.ok) setSelected(new Set<number>(json.ids ?? []));
+    } finally {
+      setSelectingAll(false);
+    }
+  }, [selectingAll, q, filters]);
+
+  // Select every submitted receipt matching the current filters, across all pages.
+  const selectAllSubmitted = useCallback(async () => {
+    if (selectingAll) return;
+    setSelectingAll(true);
+    try {
+      const sp = buildParams(1, q, filters);
+      const res = await fetch(`${API}/submitted-ids?${sp.toString()}`, { cache: "no-store" });
       const json = await res.json();
       if (res.ok) setSelected(new Set<number>(json.ids ?? []));
     } finally {
@@ -240,7 +257,7 @@ export function Receipts() {
   // Move a submitted receipt back to "yet to submit" (deletes the treasury record).
   const moveBack = useCallback(
     async (receiptId: number) => {
-      if (movingBack != null) return;
+      if (movingBack != null || movingBackBulk) return;
       if (!window.confirm("Move this receipt back to 'yet to submit'? Its receipt number will be released.")) return;
       setMovingBack(receiptId);
       try {
@@ -249,13 +266,53 @@ export function Receipts() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ receiptIds: [receiptId] }),
         });
-        if (res.ok) setRefreshKey((k) => k + 1);
+        if (res.ok) {
+          setSelected((prev) => {
+            if (!prev.has(receiptId)) return prev;
+            const next = new Set(prev);
+            next.delete(receiptId);
+            return next;
+          });
+          setRefreshKey((k) => k + 1);
+        }
       } finally {
         setMovingBack(null);
       }
     },
-    [movingBack],
+    [movingBack, movingBackBulk],
   );
+
+  // Move every selected submitted receipt back to "yet to submit" in one request.
+  const moveBackSelected = useCallback(async () => {
+    const ids = [...selected];
+    if (ids.length === 0 || movingBackBulk || movingBack != null) return;
+    if (
+      !window.confirm(
+        `Move ${ids.length} receipt${ids.length === 1 ? "" : "s"} back to 'yet to submit'? Their receipt numbers will be released.`,
+      )
+    )
+      return;
+    setMovingBackBulk(true);
+    try {
+      const res = await fetch(`${API}/unsubmit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiptIds: ids }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        showToast(json?.error ?? "Failed to move receipts back.", null, "error");
+        return;
+      }
+      const removed = json?.removed ?? ids.length;
+      setSelected(new Set());
+      setPage(1);
+      setRefreshKey((k) => k + 1);
+      showToast(`Moved ${removed} receipt${removed === 1 ? "" : "s"} back to 'yet to submit'.`, null);
+    } finally {
+      setMovingBackBulk(false);
+    }
+  }, [selected, movingBackBulk, movingBack, showToast]);
 
   if (selectedId) {
     return (
@@ -399,6 +456,38 @@ export function Receipts() {
         </div>
       )}
 
+      {/* Action bar (submitted tab) */}
+      {tab === "submitted" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={moveBackSelected}
+            disabled={selected.size === 0 || movingBackBulk}
+            className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+          >
+            {movingBackBulk
+              ? "Moving back…"
+              : `Move back to 'yet to submit'${selected.size ? ` (${selected.size})` : ""}`}
+          </button>
+          {submitted.total > 0 && (
+            <button
+              onClick={selectAllSubmitted}
+              disabled={selectingAll}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              {selectingAll ? "Selecting…" : `Select all ${submitted.total.toLocaleString("en-IN")} submitted`}
+            </button>
+          )}
+          {selected.size > 0 && (
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              Clear selection
+            </button>
+          )}
+        </div>
+      )}
+
       {tab === "pending" ? (
         <PendingTable
           rows={pending.data}
@@ -414,9 +503,14 @@ export function Receipts() {
         <SubmittedTable
           rows={submitted.data}
           loading={loading}
+          selected={selected}
+          allOnPageSelected={allOnPageSelected}
+          onToggleOne={toggleOne}
+          onToggleAll={toggleAll}
           onOpen={openDetail}
           onMoveBack={moveBack}
           movingBack={movingBack}
+          movingBackBulk={movingBackBulk}
           hasActiveFilters={!!hasActiveFilters}
         />
       )}
@@ -673,16 +767,26 @@ function PendingTable({
 function SubmittedTable({
   rows,
   loading,
+  selected,
+  allOnPageSelected,
+  onToggleOne,
+  onToggleAll,
   onOpen,
   onMoveBack,
   movingBack,
+  movingBackBulk,
   hasActiveFilters,
 }: {
   rows: SubmittedReceiptRow[];
   loading: boolean;
+  selected: Set<number>;
+  allOnPageSelected: boolean;
+  onToggleOne: (id: number) => void;
+  onToggleAll: () => void;
   onOpen: (id: number) => void;
   onMoveBack: (receiptId: number) => void;
   movingBack: number | null;
+  movingBackBulk: boolean;
   hasActiveFilters: boolean;
 }) {
   return (
@@ -690,6 +794,15 @@ function SubmittedTable({
       <table className="min-w-full divide-y divide-gray-200 text-xs">
         <thead className="border-b border-gray-200 bg-gray-50/70 text-left text-[10px] uppercase tracking-wide text-gray-500">
           <tr>
+            <th className="px-2 py-2">
+              <input
+                type="checkbox"
+                checked={allOnPageSelected}
+                onChange={onToggleAll}
+                title="Select all on this page"
+                aria-label="Select all on this page"
+              />
+            </th>
             <th className="px-2 py-2">Receipt #</th>
             <th className="px-2 py-2">Type</th>
             <th className="px-2 py-2">Legal name</th>
@@ -707,14 +820,14 @@ function SubmittedTable({
         <tbody className="divide-y divide-gray-100 bg-white">
           {loading && (
             <tr>
-              <td colSpan={12} className="px-2 py-6 text-center text-gray-400">
+              <td colSpan={13} className="px-2 py-6 text-center text-gray-400">
                 Loading…
               </td>
             </tr>
           )}
           {!loading && rows.length === 0 && (
             <tr>
-              <td colSpan={12} className="px-2 py-6 text-center text-gray-400">
+              <td colSpan={13} className="px-2 py-6 text-center text-gray-400">
                 {hasActiveFilters ? "No submitted receipts match these filters." : "No receipts submitted yet."}
               </td>
             </tr>
@@ -722,12 +835,21 @@ function SubmittedTable({
           {!loading &&
             rows.map((r) => {
               const clickable = r.contributionId != null;
+              const checked = selected.has(r.id);
               return (
                 <tr
                   key={r.id}
                   onClick={clickable ? () => onOpen(r.contributionId!) : undefined}
-                  className={`align-top ${clickable ? "cursor-pointer hover:bg-indigo-50/60" : ""}`}
+                  className={`align-top ${checked ? "bg-indigo-50/50" : clickable ? "cursor-pointer hover:bg-indigo-50/60" : ""}`}
                 >
+                  <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggleOne(r.id)}
+                      aria-label={`Select receipt ${r.receiptNo}`}
+                    />
+                  </td>
                   <td className="px-2 py-1.5 font-mono text-[11px] font-medium text-gray-800">{r.receiptNo}</td>
                   <td className="px-2 py-1.5">
                     <span
@@ -757,7 +879,7 @@ function SubmittedTable({
                   <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => onMoveBack(r.id)}
-                      disabled={movingBack === r.id}
+                      disabled={movingBack === r.id || movingBackBulk}
                       title="Move back to 'yet to submit'"
                       className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                     >

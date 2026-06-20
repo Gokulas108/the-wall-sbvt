@@ -14,7 +14,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+// Any OpenAI-compatible /chat/completions endpoint works here (Groq, OpenRouter, Gemini's
+// OpenAI-compat layer, Cerebras, SambaNova, Together, a local Ollama, …). Override the base
+// URL + GROQ_MODEL + GROQ_API_KEY in env to switch providers — no code change needed.
+const GROQ_URL =
+  process.env.GROQ_API_BASE_URL ?? "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_TIMEOUT_MS = 6000;
 
 function model() {
