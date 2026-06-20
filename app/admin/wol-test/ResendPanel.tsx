@@ -13,12 +13,27 @@ const TAGS: { tag: string; template: string; note: string }[] = [
 
 type Json = Record<string, unknown>;
 
+// Mirror of ResendResult in lib/wol/resend.ts — only the fields the UI reads.
+type ResendResult = {
+  ok: boolean;
+  phone: string;
+  tag: string;
+  templateName: string | null;
+  error?: string;
+  detail?: string;
+};
+
 export function ResendPanel() {
   const [phone, setPhone] = useState("");
   const [correctName, setCorrectName] = useState("");
   const [correctAddress, setCorrectAddress] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<Json | null>(null);
+  // Live bulk-send state, populated as the NDJSON stream arrives.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [liveFailures, setLiveFailures] = useState<ResendResult[]>([]);
 
   const post = async (label: string, payload: Json) => {
     setBusy(label);
@@ -57,12 +72,92 @@ export function ResendPanel() {
     });
   };
 
-  const sendAll = () => {
+  const sendAll = async () => {
     const ok = window.confirm(
       "Send the WhatsApp templates to EVERY member in resend-list.csv, routed by tag?\n\nThis is a live bulk send and cannot be undone.",
     );
     if (!ok) return;
-    post("all", { mode: "all" });
+
+    setBusy("all");
+    setResult(null);
+    setProgress({ done: 0, total: 0 });
+    setLiveFailures([]);
+
+    try {
+      const res = await fetch("/api/wol-wf/resend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "all" }),
+      });
+
+      // No streaming body (e.g. an error response) — fall back to one-shot parsing.
+      if (!res.ok || !res.body) {
+        const text = await res.text();
+        try {
+          setResult(JSON.parse(text) as Json);
+        } catch {
+          setResult({ ok: false, error: `HTTP ${res.status}`, raw: text.slice(0, 1000) });
+        }
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      const handleLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let msg: Json;
+        try {
+          msg = JSON.parse(trimmed) as Json;
+        } catch {
+          return; // ignore partial / malformed frames
+        }
+        if (msg.type === "progress") {
+          setProgress({ done: Number(msg.done) || 0, total: Number(msg.total) || 0 });
+          const last = msg.last as ResendResult | undefined;
+          if (last && !last.ok) setLiveFailures((prev) => [...prev, last]);
+        } else if (msg.type === "done") {
+          setResult(msg);
+        }
+      };
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          handleLine(buf.slice(0, nl));
+          buf = buf.slice(nl + 1);
+        }
+      }
+      handleLine(buf); // flush any trailing frame without a newline
+    } catch (err) {
+      setResult({ ok: false, error: err instanceof Error ? err.message : "Request failed" });
+    } finally {
+      setBusy(null);
+      setProgress(null);
+    }
+  };
+
+  // Failures to display: the final summary's results once done, else what streamed in live.
+  const finalResults =
+    result && Array.isArray(result.results)
+      ? (result.results as ResendResult[])
+      : null;
+  const failures: ResendResult[] = finalResults
+    ? finalResults.filter((r) => !r.ok)
+    : liveFailures;
+
+  const copyFailedNumbers = async () => {
+    const text = failures.map((f) => f.phone).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — selecting the list still works.
+    }
   };
 
   return (
@@ -145,6 +240,75 @@ export function ResendPanel() {
       >
         {busy === "all" ? "Sending to all…" : "⚠ Send to ALL in resend-list.csv"}
       </button>
+
+      {progress && busy === "all" && (
+        <div className="rounded border border-indigo-200 bg-indigo-50 p-3">
+          <div className="flex items-center justify-between text-sm font-medium text-indigo-800">
+            <span>Sending…</span>
+            <span>
+              {progress.done}
+              {progress.total ? ` / ${progress.total}` : ""}
+            </span>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded bg-indigo-100">
+            <div
+              className="h-full bg-indigo-600 transition-all"
+              style={{
+                width: progress.total
+                  ? `${Math.round((progress.done / progress.total) * 100)}%`
+                  : "0%",
+              }}
+            />
+          </div>
+          {liveFailures.length > 0 && (
+            <p className="mt-1 text-xs text-red-600">
+              {liveFailures.length} failed so far
+            </p>
+          )}
+        </div>
+      )}
+
+      {failures.length > 0 && (
+        <div className="rounded border border-red-300 bg-red-50 p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-red-800">
+              {failures.length} failed {failures.length === 1 ? "number" : "numbers"}
+            </h3>
+            <button
+              type="button"
+              onClick={copyFailedNumbers}
+              className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+            >
+              Copy numbers
+            </button>
+          </div>
+          <div className="mt-2 max-h-72 overflow-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-red-700">
+                <tr>
+                  <th className="py-1 pr-2 font-medium">Phone</th>
+                  <th className="py-1 pr-2 font-medium">Tag</th>
+                  <th className="py-1 font-medium">Error</th>
+                </tr>
+              </thead>
+              <tbody className="align-top text-red-900">
+                {failures.map((f, i) => (
+                  <tr key={`${f.phone}-${i}`} className="border-t border-red-200">
+                    <td className="py-1 pr-2 font-mono whitespace-nowrap">{f.phone}</td>
+                    <td className="py-1 pr-2 whitespace-nowrap">{f.tag}</td>
+                    <td className="py-1">
+                      {f.error ?? "Failed"}
+                      {f.detail ? (
+                        <span className="block opacity-60">{f.detail.slice(0, 200)}</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {result && (
         <div

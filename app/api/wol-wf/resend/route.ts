@@ -3,6 +3,9 @@ import { requireAdminFromRequest } from "@/lib/auth/donor-form";
 import { resolveDoubletick } from "@/lib/whatsapp/doubletick";
 import { sendAllResends, sendResend, templateForTag } from "@/lib/wol/resend";
 
+// The bulk run streams progress, so this route must never be cached/buffered.
+export const dynamic = "force-dynamic";
+
 // Re-send campaign trigger, driven ONLY by the /admin/wol-test dashboard. Admin-gated.
 //   mode "test" → send one tag's template to a single number (preview before the bulk run).
 //   mode "all"  → send to every row in resend-list.csv, routed by its tag.
@@ -35,8 +38,44 @@ export async function POST(req: NextRequest) {
     const mode = typeof body.mode === "string" ? body.mode : "";
 
     if (mode === "all") {
-      const summary = await sendAllResends(cfg);
-      return NextResponse.json({ ok: summary.failed === 0, mode: "all", ...summary });
+      // Stream newline-delimited JSON: one {type:"progress"} per completed row, then a
+      // final {type:"done"} carrying the full summary. The client reads the body directly
+      // (not EventSource — this is a POST) and drives a progress bar + live failure list.
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const send = (obj: unknown) => {
+            try {
+              controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+            } catch {
+              // Client disconnected — the send below will no-op, run continues server-side.
+            }
+          };
+          try {
+            const summary = await sendAllResends(cfg, (u) =>
+              send({ type: "progress", ...u }),
+            );
+            send({ type: "done", ok: summary.failed === 0, mode: "all", ...summary });
+          } catch (err) {
+            console.error("[wol-wf/resend] bulk send failed", err);
+            send({
+              type: "done",
+              ok: false,
+              mode: "all",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          } finally {
+            controller.close();
+          }
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
     }
 
     if (mode === "test") {

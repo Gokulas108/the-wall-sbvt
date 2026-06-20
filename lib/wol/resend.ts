@@ -312,8 +312,15 @@ export interface ResendBatchSummary {
 }
 
 // Send to every row in resend-list.csv, routed by tag, in small concurrent batches.
+// `onProgress` (optional) fires once per completed row so callers can stream a live
+// progress bar; it never affects the batch flow and exceptions in it are ignored.
 export async function sendAllResends(
   cfg: DoubletickConfig,
+  onProgress?: (update: {
+    done: number;
+    total: number;
+    last: ResendResult;
+  }) => void,
 ): Promise<ResendBatchSummary> {
   const rows = loadResendRows();
   const results: ResendResult[] = [];
@@ -332,7 +339,15 @@ export async function sendAllResends(
         ),
       ),
     );
-    results.push(...settled);
+    // Promise.all preserves order, so emit per-row progress in CSV order.
+    for (const r of settled) {
+      results.push(r);
+      try {
+        onProgress?.({ done: results.length, total: rows.length, last: r });
+      } catch {
+        // A failing progress sink must never abort the bulk send.
+      }
+    }
   }
   const sent = results.filter((r) => r.ok).length;
   return { total: rows.length, sent, failed: results.length - sent, results };
