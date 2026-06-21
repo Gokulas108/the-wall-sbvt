@@ -22,6 +22,7 @@ import { prisma } from "@/lib/db/prisma";
 import { COST_PER_NAME, formatINR } from "@/lib/mosaic/engine";
 import {
   donorPlaceholderName,
+  formatDonationDate,
   getWolNumberContext,
 } from "@/lib/wol/context";
 import { buildReceipts, resolveReceiptMode } from "@/lib/wol/receipts";
@@ -124,19 +125,6 @@ export function loadResendRows(): ResendRow[] {
 function extractPincode(value: string): string | null {
   const m = value.match(/\b\d{6}\b/);
   return m ? m[0] : null;
-}
-
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-// ISO timestamp → "18 Jun 2026". Parsed from the date part to stay timezone-stable.
-function formatDonationDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  const mi = Number(m) - 1;
-  if (!y || !d || mi < 0 || mi > 11) return "";
-  return `${Number(d)} ${MONTHS[mi]} ${y}`;
 }
 
 // Light per-number lookup (filtered query, a handful of rows) for the follow_up_wol /

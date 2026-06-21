@@ -4,10 +4,12 @@ import { prisma } from "@/lib/db/prisma";
 import {
   resolveDoubletick,
   sendTemplateMessage,
+  sendTemplateWithPlaceholders,
 } from "@/lib/whatsapp/doubletick";
 import {
   donorPlaceholderName,
   getWolNumberSummary,
+  wolNoAddressV1Placeholders,
 } from "@/lib/wol/context";
 import { normalizeWhatsappNumber } from "@/lib/whatsapp-care/phone";
 
@@ -17,7 +19,7 @@ import { normalizeWhatsappNumber } from "@/lib/whatsapp-care/phone";
 // block_submissions; and it skips the 250/day cap, the send-log, and the single-operator
 // restriction since test sends shouldn't count against the live campaign.
 const TEMPLATE_ADDRESS_EXISTS = "wol_address_exists";
-const TEMPLATE_NO_ADDRESS = "wol_no_address";
+const TEMPLATE_NO_ADDRESS_V1 = "wol_no_address_v1";
 const INTAKE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
@@ -89,10 +91,9 @@ export async function POST(req: NextRequest) {
 
   // Same template-choice logic as production wol-wf — but panSatisfied now reflects
   // testAmount, so amount > ₹10,000 sends "Enter Details" (collects name/address/PAN).
-  const templateName =
-    summary.hasDetails && summary.panSatisfied
-      ? TEMPLATE_ADDRESS_EXISTS
-      : TEMPLATE_NO_ADDRESS;
+  // No details (or PAN still owed) → wol_no_address_v1 with [name, amount, date].
+  const detailsOnFile = summary.hasDetails && summary.panSatisfied;
+  const templateName = detailsOnFile ? TEMPLATE_ADDRESS_EXISTS : TEMPLATE_NO_ADDRESS_V1;
   const name = donorPlaceholderName(summary.donorNames);
 
   console.info("[wol-wf/test] sending template", {
@@ -103,14 +104,23 @@ export async function POST(req: NextRequest) {
     name,
   });
 
-  const res = await sendTemplateMessage(
-    cfg.apiKey,
-    cfg.from,
-    summary.normalizedNumber,
-    templateName,
-    cfg.language,
-    name,
-  );
+  const res = detailsOnFile
+    ? await sendTemplateMessage(
+        cfg.apiKey,
+        cfg.from,
+        summary.normalizedNumber,
+        templateName,
+        cfg.language,
+        name,
+      )
+    : await sendTemplateWithPlaceholders(
+        cfg.apiKey,
+        cfg.from,
+        summary.normalizedNumber,
+        templateName,
+        cfg.language,
+        wolNoAddressV1Placeholders(summary),
+      );
   if (!res.ok) {
     const details = await res.text();
     return NextResponse.json(

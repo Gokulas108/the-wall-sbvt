@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { prisma } from "@/lib/db/prisma";
-import { COST_PER_NAME } from "@/lib/mosaic/engine";
+import { COST_PER_NAME, formatINR } from "@/lib/mosaic/engine";
 import { MATCHED_STATUSES } from "@/lib/reconciliation/format";
 import { modeOfPaymentLabel } from "@/lib/receipts/urls";
 import {
@@ -69,6 +69,7 @@ export interface WolNumberSummary {
   donorCount: number; // distinct donor names
   lineCount: number; // block_submission lines
   totalRupees: number;
+  latestDate: string | null; // ISO of this number's most recent submission, null if none
   legalName: string | null;
   address: string | null;
   panNo: string | null;
@@ -123,6 +124,7 @@ export async function getWolNumberSummary(
     donorCount: 0,
     lineCount: 0,
     totalRupees: 0,
+    latestDate: null,
     legalName: null,
     address: null,
     panNo: null,
@@ -137,7 +139,7 @@ export async function getWolNumberSummary(
   const [subs, intake] = await Promise.all([
     prisma.blockSubmission.findMany({
       where: { whatsapp: { contains: last10 } },
-      select: { name: true, qty: true, whatsapp: true },
+      select: { name: true, qty: true, whatsapp: true, createdAt: true },
     }),
     findIntakeForKey(key),
   ]);
@@ -147,6 +149,10 @@ export async function getWolNumberSummary(
     ...new Set(mine.map((s) => s.name.trim()).filter(Boolean)),
   ];
   const totalRupees = mine.reduce((a, s) => a + s.qty * COST_PER_NAME, 0);
+  const latest = mine.reduce<Date | null>(
+    (a, s) => (!a || s.createdAt > a ? s.createdAt : a),
+    null,
+  );
   const legalName = intake?.legalName?.trim() ? intake.legalName : null;
   const address = intake?.address?.trim() ? intake.address : null;
   const panNo = intake?.panNo?.trim() ? intake.panNo : null;
@@ -163,6 +169,7 @@ export async function getWolNumberSummary(
     donorCount: donorNames.length,
     lineCount: mine.length,
     totalRupees,
+    latestDate: latest ? latest.toISOString() : null,
     legalName,
     address,
     panNo,
@@ -353,4 +360,29 @@ export function donorPlaceholderName(donorNames: string[]): string {
   if (donorNames.length === 0) return "Donor";
   if (donorNames.length === 1) return donorNames[0];
   return `${donorNames[0]} and ${donorNames.length - 1} others`;
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// ISO timestamp → "18 Jun 2026". Parsed from the date part to stay timezone-stable.
+export function formatDonationDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  const mi = Number(m) - 1;
+  if (!y || !d || mi < 0 || mi > 11) return "";
+  return `${Number(d)} ${MONTHS[mi]} ${y}`;
+}
+
+// Body placeholders for the wol_no_address_v1 template, in its declared order:
+// [donorName, amount, date]. `amount` is the BARE rupee number (the approved template body
+// renders "₹{{amount}}/-"); `date` is the number's latest contribution date as "18 Jun 2026".
+// Falls back to today's date only if, exceptionally, no dated submission is on file.
+export function wolNoAddressV1Placeholders(summary: WolNumberSummary): string[] {
+  return [
+    donorPlaceholderName(summary.donorNames),
+    formatINR(summary.totalRupees),
+    formatDonationDate(summary.latestDate ?? new Date().toISOString()),
+  ];
 }

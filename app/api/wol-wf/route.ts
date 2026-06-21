@@ -4,10 +4,12 @@ import { prisma } from "@/lib/db/prisma";
 import {
   resolveDoubletick,
   sendTemplateMessage,
+  sendTemplateWithPlaceholders,
 } from "@/lib/whatsapp/doubletick";
 import {
   donorPlaceholderName,
   getWolNumberSummary,
+  wolNoAddressV1Placeholders,
 } from "@/lib/wol/context";
 import { getWolSendStatus, recordWolSend } from "@/lib/wol/cap";
 
@@ -17,7 +19,7 @@ import { getWolSendStatus, recordWolSend } from "@/lib/wol/cap";
 // webhook routes the donor's button/text replies to the WoL handler. Mirrors kkd-wf.
 const WOL_SENDER_USERNAME = "gokul";
 const TEMPLATE_ADDRESS_EXISTS = "wol_address_exists";
-const TEMPLATE_NO_ADDRESS = "wol_no_address";
+const TEMPLATE_NO_ADDRESS_V1 = "wol_no_address_v1";
 const INTAKE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
@@ -56,11 +58,11 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Address (and PAN, when required) already on file → "Get Receipt" template; else collect.
-  const templateName =
-    summary.hasDetails && summary.panSatisfied
-      ? TEMPLATE_ADDRESS_EXISTS
-      : TEMPLATE_NO_ADDRESS;
+  // Address (and PAN, when required) already on file → "Get Receipt" template (name only).
+  // Otherwise → wol_no_address_v1, which shows the donor their contributed amount + date
+  // alongside the "Enter Details" button.
+  const detailsOnFile = summary.hasDetails && summary.panSatisfied;
+  const templateName = detailsOnFile ? TEMPLATE_ADDRESS_EXISTS : TEMPLATE_NO_ADDRESS_V1;
   const phone = summary.normalizedNumber;
   const name = donorPlaceholderName(summary.donorNames);
 
@@ -70,14 +72,23 @@ export async function GET(req: NextRequest) {
     create: { phone, flow: "wol", status: "ready", expiresAt: new Date(Date.now() + INTAKE_TTL_MS) },
   });
 
-  const res = await sendTemplateMessage(
-    cfg.apiKey,
-    cfg.from,
-    phone,
-    templateName,
-    cfg.language,
-    name,
-  );
+  const res = detailsOnFile
+    ? await sendTemplateMessage(
+        cfg.apiKey,
+        cfg.from,
+        phone,
+        templateName,
+        cfg.language,
+        name,
+      )
+    : await sendTemplateWithPlaceholders(
+        cfg.apiKey,
+        cfg.from,
+        phone,
+        templateName,
+        cfg.language,
+        wolNoAddressV1Placeholders(summary),
+      );
 
   if (!res.ok) {
     const details = await res.text();
