@@ -4,7 +4,7 @@
 // Only the INITIAL outbound template (wol_address_exists / wol_no_address) counts against
 // the 250/day cap; each successful send writes one WolMessageLog row. The day window is
 // IST midnight (the campaign is India-based). The random batch draws from "all okay"
-// numbers that — for the initial rollout — have exactly one donor, excluding any number
+// numbers (any donor count up to the review threshold of 30), excluding any number
 // already sent the WoL template.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -79,7 +79,8 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-// Random "all okay", single-donor WoL numbers not yet sent, capped at `budget`.
+// Random "all okay" WoL numbers (any donor count ≤ review threshold) not yet sent,
+// capped at `budget`.
 export async function pickRandomEligibleNumbers(
   budget: number,
 ): Promise<string[]> {
@@ -90,9 +91,10 @@ export async function pickRandomEligibleNumbers(
   ]);
   const eligible = rows.filter(
     (r) =>
+      // needsReview already excludes numbers with > MANY_DONORS_THRESHOLD (30) donors,
+      // so multi-donor numbers up to that cap are in; only the over-30 ones are held back.
       !r.needsReview &&
       !r.isInvalid &&
-      r.donorNames.length === 1 &&
       isIndianWhatsappNumber(r.normalizedNumber) && // Indian numbers only, for now
       !sent.has(r.normalizedNumber),
   );
