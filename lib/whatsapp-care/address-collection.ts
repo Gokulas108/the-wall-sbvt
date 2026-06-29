@@ -175,6 +175,46 @@ export interface AddressCollectionFilters {
   replied?: "yes" | "no";
 }
 
+// A search query plus the row-level filters — the shared input shape for the list,
+// export, and the URL-param parser below.
+export interface AddressCollectionListQuery extends AddressCollectionFilters {
+  q?: string;
+}
+
+// Every accepted flag. Single source of truth for both the list and export routes so
+// the two never drift (the table and "select all filtered" must match exactly).
+export const ALL_ADDRESS_COLLECTION_FLAGS: AddressCollectionFlag[] = [
+  "okay",
+  "needsReview",
+  "invalid",
+  "manyDonors",
+  "invalidPhone",
+  "unverified",
+  "multipleDonors",
+  "conflicts",
+  "awaitingReply",
+  "stalledIncomplete",
+];
+
+// Parse the list/export query string the same way everywhere: comma-separated `flags`
+// (unknown values dropped), tri-state `messaged` / `replied`, and free-text `q`.
+export function parseAddressCollectionFilters(sp: URLSearchParams): AddressCollectionListQuery {
+  const flags = (sp.get("flags") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is AddressCollectionFlag =>
+      ALL_ADDRESS_COLLECTION_FLAGS.includes(s as AddressCollectionFlag),
+    );
+  const messaged = sp.get("messaged");
+  const replied = sp.get("replied");
+  return {
+    q: sp.get("q") ?? "",
+    flags,
+    messaged: messaged === "yes" || messaged === "no" ? messaged : undefined,
+    replied: replied === "yes" || replied === "no" ? replied : undefined,
+  };
+}
+
 function matchesFlag(r: AddressCollectionRow, flag: AddressCollectionFlag): boolean {
   switch (flag) {
     case "okay":
@@ -200,25 +240,17 @@ function matchesFlag(r: AddressCollectionRow, flag: AddressCollectionFlag): bool
   }
 }
 
-// Paginated + searchable slice for the list table. Heavy per-row txn arrays are
-// trimmed to a small preview since the list only shows the first few — the detail
-// page reads the full set separately.
-export async function getAddressCollectionPage(
-  opts: {
-    page?: number;
-    pageSize?: number;
-    q?: string;
-  } & AddressCollectionFilters,
-): Promise<AddressCollectionPage> {
-  const page = Math.max(1, Math.floor(opts.page ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Math.floor(opts.pageSize ?? 25)));
-  const full = await getAddressCollection();
-
-  let rows = full.rows;
+// Apply search + row-level filters. Shared by the paginated list and the full export
+// so both honour the same query exactly.
+function filterRows(
+  rows: AddressCollectionRow[],
+  opts: AddressCollectionListQuery,
+): AddressCollectionRow[] {
+  let out = rows;
   const query = (opts.q ?? "").trim().toLowerCase();
   if (query) {
     const digits = query.replace(/\D/g, "");
-    rows = rows.filter(
+    out = out.filter(
       (r) =>
         (digits.length > 0 && r.normalizedNumber.includes(digits)) ||
         r.displayNumber.toLowerCase().includes(query) ||
@@ -227,12 +259,28 @@ export async function getAddressCollectionPage(
   }
 
   const flags = opts.flags ?? [];
-  if (flags.length) rows = rows.filter((r) => flags.some((f) => matchesFlag(r, f)));
-  if (opts.messaged === "yes") rows = rows.filter((r) => r.messaged);
-  else if (opts.messaged === "no") rows = rows.filter((r) => !r.messaged);
-  if (opts.replied === "yes") rows = rows.filter((r) => r.replied);
-  else if (opts.replied === "no") rows = rows.filter((r) => !r.replied);
+  if (flags.length) out = out.filter((r) => flags.some((f) => matchesFlag(r, f)));
+  if (opts.messaged === "yes") out = out.filter((r) => r.messaged);
+  else if (opts.messaged === "no") out = out.filter((r) => !r.messaged);
+  if (opts.replied === "yes") out = out.filter((r) => r.replied);
+  else if (opts.replied === "no") out = out.filter((r) => !r.replied);
+  return out;
+}
 
+// Paginated + searchable slice for the list table. Heavy per-row txn arrays are
+// trimmed to a small preview since the list only shows the first few — the detail
+// page reads the full set separately.
+export async function getAddressCollectionPage(
+  opts: {
+    page?: number;
+    pageSize?: number;
+  } & AddressCollectionListQuery,
+): Promise<AddressCollectionPage> {
+  const page = Math.max(1, Math.floor(opts.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Math.floor(opts.pageSize ?? 25)));
+  const full = await getAddressCollection();
+
+  const rows = filterRows(full.rows, opts);
   const total = rows.length;
   const start = (page - 1) * pageSize;
   const slice = rows
@@ -248,6 +296,34 @@ export async function getAddressCollectionPage(
     facets: full.facets,
     generatedAt: full.generatedAt,
   };
+}
+
+// One row of the "select all filtered → export" CSV: a number with its donor names
+// rolled into a single comma-separated string and the per-number totals.
+export interface AddressCollectionExportRow {
+  normalizedNumber: string;
+  displayNumber: string;
+  names: string; // distinct donor names, comma-separated
+  nameCount: number;
+  txnCount: number;
+  totalAmountPaise: number;
+}
+
+// Every filtered row (no pagination), flattened for export. Backs "Select all filtered"
+// so the client can add the whole matching set to its selection in one request.
+export async function getAddressCollectionExport(
+  opts: AddressCollectionListQuery,
+): Promise<{ rows: AddressCollectionExportRow[]; generatedAt: string }> {
+  const full = await getAddressCollection();
+  const rows = filterRows(full.rows, opts).map((r) => ({
+    normalizedNumber: r.normalizedNumber,
+    displayNumber: r.displayNumber,
+    names: r.donorNames.join(", "),
+    nameCount: r.donorNames.length,
+    txnCount: r.txnCount,
+    totalAmountPaise: r.totalAmountPaise,
+  }));
+  return { rows, generatedAt: full.generatedAt };
 }
 
 // Build the per-number Address Collection rows by aggregating block_submissions in JS,

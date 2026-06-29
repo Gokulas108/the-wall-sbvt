@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import type {
+  AddressCollectionExportRow,
   AddressCollectionFacets,
   AddressCollectionFlag,
   AddressCollectionPage,
@@ -212,6 +213,100 @@ export function WhatsAppCare({
   const hasActiveFilters =
     filters.flags.length > 0 || filters.messaged !== null || filters.replied !== null;
 
+  // ── Selection + export ─────────────────────────────────────────────────────
+  // Keyed by normalized number. We store the export-shaped data at selection time so the
+  // selection survives paging/filtering — the row may no longer be loaded when we build
+  // the CSV. "Select all filtered" pulls the whole matching set from the export endpoint.
+  const [selected, setSelected] = useState<Map<string, AddressCollectionExportRow>>(new Map());
+  const [selectingAll, setSelectingAll] = useState(false);
+
+  const toggleRow = useCallback((r: AddressCollectionRow) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(r.normalizedNumber)) next.delete(r.normalizedNumber);
+      else next.set(r.normalizedNumber, rowToExport(r));
+      return next;
+    });
+  }, []);
+
+  // Header checkbox: select/deselect every row on the current page.
+  const togglePage = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      const rows = data.rows;
+      const allSel = rows.length > 0 && rows.every((r) => next.has(r.normalizedNumber));
+      if (allSel) rows.forEach((r) => next.delete(r.normalizedNumber));
+      else rows.forEach((r) => next.set(r.normalizedNumber, rowToExport(r)));
+      return next;
+    });
+  }, [data.rows]);
+
+  // Add every number matching the current search + filters (across all pages) to the
+  // selection in one request. Existing picks are kept (union, not replace).
+  const selectAllFiltered = useCallback(async () => {
+    setSelectingAll(true);
+    try {
+      const sp = new URLSearchParams();
+      if (q.trim()) sp.set("q", q.trim());
+      if (filters.flags.length) sp.set("flags", filters.flags.join(","));
+      if (filters.messaged) sp.set("messaged", filters.messaged);
+      if (filters.replied) sp.set("replied", filters.replied);
+      const res = await fetch(
+        `/api/admin/whatsapp-care/address-collection/export?${sp.toString()}`,
+        { cache: "no-store" },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(json.rows)) {
+        const rows = json.rows as AddressCollectionExportRow[];
+        setSelected((prev) => {
+          const next = new Map(prev);
+          for (const row of rows) next.set(row.normalizedNumber, row);
+          return next;
+        });
+        showToast(`Selected ${rows.length} number${rows.length === 1 ? "" : "s"}.`, "success");
+      } else {
+        showToast("Couldn't select all filtered numbers.", "error");
+      }
+    } catch {
+      showToast("Couldn't select all filtered numbers.", "error");
+    } finally {
+      setSelectingAll(false);
+    }
+  }, [q, filters, showToast]);
+
+  const clearSelection = useCallback(() => setSelected(new Map()), []);
+
+  // Build the CSV client-side from the stored selection (number, comma-joined names,
+  // total in rupees, and the name/txn counts) and trigger a download.
+  const exportSelected = useCallback(() => {
+    const rows = [...selected.values()].sort((a, b) =>
+      a.displayNumber.localeCompare(b.displayNumber),
+    );
+    if (!rows.length) return;
+    const headers = ["number", "names", "total_amount_inr", "name_count", "txn_count"];
+    const esc = (val: string | number) => {
+      const str = String(val ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const csv = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [r.displayNumber, r.names, (r.totalAmountPaise / 100).toFixed(2), r.nameCount, r.txnCount]
+          .map(esc)
+          .join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "whatsapp-care-numbers.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [selected]);
+
   // Send the WoL template to one number. Returns true on a confirmed send so the random
   // batch can tally successes. Refreshes the header cap counter via onWolSent.
   const sendOne = useCallback(
@@ -288,6 +383,16 @@ export function WhatsAppCare({
       </>
     );
   }
+
+  const pageRows = data.rows;
+  const pageSelectedCount = pageRows.reduce(
+    (n, r) => n + (selected.has(r.normalizedNumber) ? 1 : 0),
+    0,
+  );
+  const allPageSelected = pageRows.length > 0 && pageSelectedCount === pageRows.length;
+  const selectedCount = selected.size;
+  // Hide "Select all filtered" once the whole filtered set is already covered.
+  const allFilteredSelected = data.total > 0 && allPageSelected && selectedCount >= data.total;
 
   return (
     <div className="flex flex-col gap-3">
@@ -423,10 +528,56 @@ export function WhatsAppCare({
             </div>
           </div>
 
+          {/* Selection + export bar. Selecting numbers (per-row, the page header box, or
+              "Select all filtered") builds a CSV of number · names · total · counts. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+              <span className="font-medium text-gray-700">
+                {selectedCount > 0
+                  ? `${selectedCount.toLocaleString("en-IN")} selected`
+                  : "Select numbers to export"}
+              </span>
+              {data.total > 0 && !allFilteredSelected && (
+                <button
+                  onClick={() => void selectAllFiltered()}
+                  disabled={selectingAll}
+                  className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {selectingAll
+                    ? "Selecting…"
+                    : `Select all ${data.total.toLocaleString("en-IN")} filtered`}
+                </button>
+              )}
+              {selectedCount > 0 && (
+                <button
+                  onClick={clearSelection}
+                  className="rounded-md px-2 py-1 font-medium text-gray-500 hover:text-gray-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <button
+              onClick={exportSelected}
+              disabled={selectedCount === 0}
+              className="whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
+            >
+              Export CSV{selectedCount > 0 ? ` (${selectedCount.toLocaleString("en-IN")})` : ""}
+            </button>
+          </div>
+
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             <table className="min-w-full divide-y divide-gray-200 text-xs">
               <thead className="border-b border-gray-200 bg-gray-50/70 text-left text-[10px] uppercase tracking-wide text-gray-500">
                 <tr>
+                  <th className="w-8 px-2 py-2">
+                    <SelectCheckbox
+                      checked={allPageSelected}
+                      indeterminate={pageSelectedCount > 0 && !allPageSelected}
+                      onChange={togglePage}
+                      title="Select all numbers on this page"
+                    />
+                  </th>
                   <th className="px-2 py-2">Number</th>
                   <th className="px-2 py-2">Donor(s)</th>
                   <th className="px-2 py-2">Transactions</th>
@@ -441,6 +592,8 @@ export function WhatsAppCare({
                   <Row
                     key={r.normalizedNumber}
                     row={r}
+                    selected={selected.has(r.normalizedNumber)}
+                    onToggleSelect={() => toggleRow(r)}
                     onView={() => openDetail(r.normalizedNumber)}
                     isSender={isSender}
                     sending={sendingNums.has(r.normalizedNumber)}
@@ -632,14 +785,62 @@ function TriTags({
   );
 }
 
+// Flatten a list row to the export shape stored in the selection (one number → joined
+// names + totals). Matches the server's AddressCollectionExportRow so a per-row pick and
+// a "select all filtered" pick produce identical CSV columns.
+function rowToExport(r: AddressCollectionRow): AddressCollectionExportRow {
+  return {
+    normalizedNumber: r.normalizedNumber,
+    displayNumber: r.displayNumber,
+    names: r.donorNames.join(", "),
+    nameCount: r.donorNames.length,
+    txnCount: r.txnCount,
+    totalAmountPaise: r.totalAmountPaise,
+  };
+}
+
+// Checkbox with native indeterminate support (set via ref). Stops its own click from
+// bubbling so it can sit inside the clickable row without opening the detail.
+function SelectCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  title,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  title?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate && !checked;
+  }, [indeterminate, checked]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      onClick={(e) => e.stopPropagation()}
+      title={title}
+      className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+    />
+  );
+}
+
 function Row({
   row,
+  selected,
+  onToggleSelect,
   onView,
   isSender,
   sending,
   onSend,
 }: {
   row: AddressCollectionRow;
+  selected: boolean;
+  onToggleSelect: () => void;
   onView: () => void;
   isSender: boolean;
   sending: boolean;
@@ -651,7 +852,12 @@ function Row({
   return (
     // The whole row opens the detail page; the inline controls below stop propagation
     // so toggling "invalid", editing the note, or clicking "View" doesn't double-fire.
-    <tr onClick={onView} className={`align-top cursor-pointer hover:bg-gray-50 ${rowTint}`}>
+    <tr onClick={onView} className={`align-top cursor-pointer hover:bg-gray-50 ${selected ? "bg-indigo-50/60" : rowTint}`}>
+      {/* Select — stop propagation so checking a row doesn't open its detail */}
+      <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+        <SelectCheckbox checked={selected} onChange={onToggleSelect} title="Select this number" />
+      </td>
+
       {/* Number */}
       <td className="px-2 py-1.5">
         <div className="font-mono text-gray-900">{row.displayNumber}</div>
