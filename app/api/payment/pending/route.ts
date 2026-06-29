@@ -23,10 +23,29 @@ export async function POST(req: NextRequest) {
       email?: string;
       phone?: string;
       whatsapp?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
+      pan_no?: string;
       amount?: number;
     };
 
-    const { block_id, name, qty, date_of_birth, email, phone, whatsapp, amount } = body;
+    const {
+      block_id,
+      name,
+      qty,
+      date_of_birth,
+      email,
+      phone,
+      whatsapp,
+      address,
+      city,
+      state,
+      pincode,
+      pan_no,
+      amount,
+    } = body;
 
     if (!block_id || !name || !qty || !phone || !whatsapp || !amount) {
       return NextResponse.json(
@@ -55,6 +74,11 @@ export async function POST(req: NextRequest) {
         email: (email ?? "").trim(),
         phone: phone.trim(),
         whatsapp: whatsapp.trim(),
+        address: address?.trim() || null,
+        city: city?.trim() || null,
+        state: state?.trim() || null,
+        pincode: pincode?.trim() || null,
+        panNo: pan_no?.trim().toUpperCase() || null,
         amount,
         status: "pending",
       },

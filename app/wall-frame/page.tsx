@@ -12,10 +12,16 @@ import {
 } from "@/lib/mosaic/engine";
 import { motion, AnimatePresence } from "framer-motion";
 import { COUNTRY_CODES } from "@/app/donor-form/countries";
+import { INDIAN_STATES } from "./indian-states";
 
 const COL_LABELS = Array.from({ length: GRID_SIZE }, (_, i) =>
   String.fromCharCode(65 + i),
 );
+
+// PAN card becomes mandatory once a donor inscribes this many names or more.
+const PAN_REQUIRED_QTY = 10;
+// Indian PAN format: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F).
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 // Refined pattern for the maroon sidebar
 const SIDEBAR_PATTERN = `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M20 20.5V18H0v-2h20v-2.5L22.5 15 25 12.5V0h2v12.5L29.5 15 32 18.5V20h8v2h-8v1.5L29.5 27 27 29.5V40h-2V29.5L22.5 27 20 23.5V22H0v-2h20z' fill='%23d7ad57' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`;
@@ -96,6 +102,11 @@ export default function WallFramePage() {
   const [formQtyInput, setFormQtyInput] = useState("1");
   const [formDob, setFormDob] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formAddress, setFormAddress] = useState("");
+  const [formCity, setFormCity] = useState("");
+  const [formState, setFormState] = useState("");
+  const [formPincode, setFormPincode] = useState("");
+  const [formPan, setFormPan] = useState("");
   const [formPhoneCode, setFormPhoneCode] = useState("+91");
   const [formPhone, setFormPhone] = useState("");
   const [formWaCode, setFormWaCode] = useState("+91");
@@ -332,6 +343,11 @@ export default function WallFramePage() {
     setFormQtyInput("1");
     setFormDob("");
     setFormEmail("");
+    setFormAddress("");
+    setFormCity("");
+    setFormState("");
+    setFormPincode("");
+    setFormPan("");
     setFormPhone("");
     setFormWa("");
     setFormSamePhone(false);
@@ -405,6 +421,38 @@ export default function WallFramePage() {
       setFormStatus("Please enter a valid email.");
       return false;
     }
+    if (!formAddress.trim()) {
+      setFormStatus("Address is required.");
+      return false;
+    }
+    if (!formCity.trim()) {
+      setFormStatus("City is required.");
+      return false;
+    }
+    if (!formState) {
+      setFormStatus("Please select a state.");
+      return false;
+    }
+    if (!formPincode.trim()) {
+      setFormStatus("Pincode is required.");
+      return false;
+    }
+    if (!/^\d{6}$/.test(formPincode.trim())) {
+      setFormStatus("Pincode must be 6 digits.");
+      return false;
+    }
+    if (Number.isFinite(q) && q >= PAN_REQUIRED_QTY) {
+      if (!formPan.trim()) {
+        setFormStatus(
+          `PAN is required for ${PAN_REQUIRED_QTY} or more names.`,
+        );
+        return false;
+      }
+      if (!PAN_REGEX.test(formPan.trim().toUpperCase())) {
+        setFormStatus("Please enter a valid PAN (e.g. ABCDE1234F).");
+        return false;
+      }
+    }
     if (actionType === "pledge" && !selectedPledgeDays) {
       setFormStatus("Please select pledge days.");
       return false;
@@ -436,6 +484,11 @@ export default function WallFramePage() {
           email: formEmail.trim(),
           phone: `${formPhoneCode} ${phone}`,
           whatsapp: `${formSamePhone ? formPhoneCode : formWaCode} ${wa.trim()}`,
+          address: formAddress.trim(),
+          city: formCity.trim(),
+          state: formState,
+          pincode: formPincode.trim(),
+          pan_no: qtyNumber >= PAN_REQUIRED_QTY ? formPan.trim().toUpperCase() : "",
           amount: payAmount,
         }),
       });
@@ -1232,6 +1285,135 @@ export default function WallFramePage() {
                         }}
                       />
                     </div>
+                    <div className="flex flex-col gap-1">
+                      <label
+                        className="text-[10px] font-bold tracking-wider uppercase"
+                        style={{ color: "rgba(255,230,198,0.85)" }}
+                      >
+                        Address <span style={{ color: "#f6a05a" }}>*</span>
+                      </label>
+                      <textarea
+                        value={formAddress}
+                        onChange={(e) => setFormAddress(e.target.value)}
+                        maxLength={200}
+                        rows={2}
+                        placeholder="House / street / area"
+                        className="px-3 py-2 rounded-lg text-sm outline-none resize-none"
+                        style={{
+                          background: "rgba(255,250,244,0.96)",
+                          border: "1px solid rgba(222,182,131,0.36)",
+                          color: "#2a1509",
+                          fontSize: "14px",
+                        }}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 flex flex-col gap-1">
+                        <label
+                          className="text-[10px] font-bold tracking-wider uppercase"
+                          style={{ color: "rgba(255,230,198,0.85)" }}
+                        >
+                          City <span style={{ color: "#f6a05a" }}>*</span>
+                        </label>
+                        <input
+                          value={formCity}
+                          onChange={(e) => setFormCity(e.target.value)}
+                          maxLength={50}
+                          placeholder="City"
+                          className="px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: "rgba(255,250,244,0.96)",
+                            border: "1px solid rgba(222,182,131,0.36)",
+                            color: "#2a1509",
+                            fontSize: "14px",
+                          }}
+                        />
+                      </div>
+                      <div className="w-24 flex flex-col gap-1">
+                        <label
+                          className="text-[10px] font-bold tracking-wider uppercase"
+                          style={{ color: "rgba(255,230,198,0.85)" }}
+                        >
+                          Pincode <span style={{ color: "#f6a05a" }}>*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formPincode}
+                          inputMode="numeric"
+                          maxLength={6}
+                          onChange={(e) =>
+                            setFormPincode(e.target.value.replace(/\D/g, ""))
+                          }
+                          placeholder="000000"
+                          className="px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: "rgba(255,250,244,0.96)",
+                            border: "1px solid rgba(222,182,131,0.36)",
+                            color: "#2a1509",
+                            fontSize: "14px",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label
+                        className="text-[10px] font-bold tracking-wider uppercase"
+                        style={{ color: "rgba(255,230,198,0.85)" }}
+                      >
+                        State <span style={{ color: "#f6a05a" }}>*</span>
+                      </label>
+                      <select
+                        value={formState}
+                        onChange={(e) => setFormState(e.target.value)}
+                        className="px-3 py-2 rounded-lg text-sm outline-none"
+                        style={{
+                          background: "rgba(255,250,244,0.96)",
+                          border: "1px solid rgba(222,182,131,0.36)",
+                          color: formState ? "#2a1509" : "#8a7a66",
+                          fontSize: "14px",
+                        }}
+                      >
+                        <option value="">Select state…</option>
+                        {INDIAN_STATES.map((s) => (
+                          <option key={`ds-${s}`} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {parsedFormQty >= PAN_REQUIRED_QTY && (
+                      <div className="flex flex-col gap-1">
+                        <label
+                          className="text-[10px] font-bold tracking-wider uppercase"
+                          style={{ color: "rgba(255,230,198,0.85)" }}
+                        >
+                          PAN Card <span style={{ color: "#f6a05a" }}>*</span>
+                        </label>
+                        <input
+                          value={formPan}
+                          onChange={(e) =>
+                            setFormPan(e.target.value.toUpperCase())
+                          }
+                          maxLength={10}
+                          placeholder="ABCDE1234F"
+                          autoCapitalize="characters"
+                          className="px-3 py-2 rounded-lg text-sm outline-none uppercase tracking-wider"
+                          style={{
+                            background: "rgba(255,250,244,0.96)",
+                            border: "1px solid rgba(222,182,131,0.36)",
+                            color: "#2a1509",
+                            fontSize: "14px",
+                          }}
+                        />
+                        <span
+                          className="text-[9px] leading-snug"
+                          style={{ color: "rgba(255,230,198,0.6)" }}
+                        >
+                          Required for {PAN_REQUIRED_QTY}+ names (income-tax
+                          rules).
+                        </span>
+                      </div>
+                    )}
                     <div
                       className="flex justify-between items-center px-3 py-2 rounded-lg"
                       style={{
@@ -1262,8 +1444,9 @@ export default function WallFramePage() {
                     >
                       <span className="shrink-0 mt-px">⚠️</span>
                       <span>
-                        Some banks have issues with net banking. Use UPI or card
-                        for now.
+                        SBI Net Banking is currently unavailable. If you have an
+                        SBI account, please use an alternative payment method
+                        instead of Net Banking
                       </span>
                     </div>
                     <button
@@ -2533,6 +2716,132 @@ export default function WallFramePage() {
                     }}
                   />
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    className="text-[10px] font-bold tracking-[0.18em] uppercase"
+                    style={{ color: "rgba(215,173,87,0.85)" }}
+                  >
+                    Address <span style={{ color: "#f6a05a" }}>*</span>
+                  </label>
+                  <textarea
+                    value={formAddress}
+                    onChange={(e) => setFormAddress(e.target.value)}
+                    maxLength={200}
+                    rows={2}
+                    placeholder="House / street / area"
+                    className="px-3 py-3 rounded-lg outline-none resize-none"
+                    style={{
+                      background: "rgba(255,250,244,0.98)",
+                      border: "1px solid rgba(222,182,131,0.4)",
+                      color: "#2a1509",
+                      fontSize: "16px",
+                    }}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <label
+                      className="text-[10px] font-bold tracking-[0.18em] uppercase"
+                      style={{ color: "rgba(215,173,87,0.85)" }}
+                    >
+                      City <span style={{ color: "#f6a05a" }}>*</span>
+                    </label>
+                    <input
+                      value={formCity}
+                      onChange={(e) => setFormCity(e.target.value)}
+                      maxLength={50}
+                      placeholder="City"
+                      className="w-full px-3 py-3 rounded-lg outline-none"
+                      style={{
+                        background: "rgba(255,250,244,0.98)",
+                        border: "1px solid rgba(222,182,131,0.4)",
+                        color: "#2a1509",
+                        fontSize: "16px",
+                      }}
+                    />
+                  </div>
+                  <div className="w-28 flex flex-col gap-1.5">
+                    <label
+                      className="text-[10px] font-bold tracking-[0.18em] uppercase"
+                      style={{ color: "rgba(215,173,87,0.85)" }}
+                    >
+                      Pincode <span style={{ color: "#f6a05a" }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formPincode}
+                      inputMode="numeric"
+                      maxLength={6}
+                      onChange={(e) =>
+                        setFormPincode(e.target.value.replace(/\D/g, ""))
+                      }
+                      placeholder="000000"
+                      className="w-full px-3 py-3 rounded-lg outline-none"
+                      style={{
+                        background: "rgba(255,250,244,0.98)",
+                        border: "1px solid rgba(222,182,131,0.4)",
+                        color: "#2a1509",
+                        fontSize: "16px",
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    className="text-[10px] font-bold tracking-[0.18em] uppercase"
+                    style={{ color: "rgba(215,173,87,0.85)" }}
+                  >
+                    State <span style={{ color: "#f6a05a" }}>*</span>
+                  </label>
+                  <select
+                    value={formState}
+                    onChange={(e) => setFormState(e.target.value)}
+                    className="px-3 py-3 rounded-lg outline-none"
+                    style={{
+                      background: "rgba(255,250,244,0.98)",
+                      border: "1px solid rgba(222,182,131,0.4)",
+                      color: formState ? "#2a1509" : "#8a7a66",
+                      fontSize: "16px",
+                    }}
+                  >
+                    <option value="">Select state…</option>
+                    {INDIAN_STATES.map((s) => (
+                      <option key={`ms-${s}`} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {parsedFormQty >= PAN_REQUIRED_QTY && (
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      className="text-[10px] font-bold tracking-[0.18em] uppercase"
+                      style={{ color: "rgba(215,173,87,0.85)" }}
+                    >
+                      PAN Card <span style={{ color: "#f6a05a" }}>*</span>
+                    </label>
+                    <input
+                      value={formPan}
+                      onChange={(e) => setFormPan(e.target.value.toUpperCase())}
+                      maxLength={10}
+                      placeholder="ABCDE1234F"
+                      autoCapitalize="characters"
+                      className="px-3 py-3 rounded-lg outline-none uppercase tracking-wider"
+                      style={{
+                        background: "rgba(255,250,244,0.98)",
+                        border: "1px solid rgba(222,182,131,0.4)",
+                        color: "#2a1509",
+                        fontSize: "16px",
+                      }}
+                    />
+                    <span
+                      className="text-[10px] leading-snug"
+                      style={{ color: "rgba(215,173,87,0.7)" }}
+                    >
+                      Required for {PAN_REQUIRED_QTY}+ names (income-tax rules).
+                    </span>
+                  </div>
+                )}
                 <div
                   className="flex justify-between items-center px-4 py-3 rounded-lg"
                   style={{
@@ -2568,7 +2877,9 @@ export default function WallFramePage() {
                 >
                   <span className="shrink-0 mt-px">⚠️</span>
                   <span>
-                    Some banks have issues with net banking. Use UPI or card.
+                    SBI Net Banking is currently unavailable. If you have an SBI
+                    account, please use an alternative payment method instead of
+                    Net Banking
                   </span>
                 </div>
                 <button

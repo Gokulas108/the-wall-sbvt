@@ -130,7 +130,22 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Atomically create block_submission + block_name ─────────────────────────
-  const { blockId, name, qty, dateOfBirth, email, phone, whatsapp, amount, id: pendingId } = pendingTx;
+  const {
+    blockId,
+    name,
+    qty,
+    dateOfBirth,
+    email,
+    phone,
+    whatsapp,
+    address,
+    city,
+    state,
+    pincode,
+    panNo,
+    amount,
+    id: pendingId,
+  } = pendingTx;
   const costPerName = COST_PER_NAME;
 
   try {
@@ -157,6 +172,11 @@ export async function POST(req: NextRequest) {
             email,
             phone,
             whatsapp,
+            address,
+            city,
+            state,
+            pincode,
+            panNo,
             paymentMethod: "online",
             paymentReference: txn_id,
             serialNumber: `ONL-${blockId}-${txn_id.slice(-6).toUpperCase()}`,

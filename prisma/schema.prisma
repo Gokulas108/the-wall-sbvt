@@ -28,6 +28,14 @@ model BlockSubmission {
   email             String
   phone             String
   whatsapp          String
+  // Donor address & PAN. Nullable: rows created before this form existed (and the
+  // in-person volunteer form, which doesn't collect them) stay NULL. The /wall-frame
+  // online form makes them required client-side (PAN only when qty >= 10).
+  address           String?
+  city              String?
+  state             String?
+  pincode           String?
+  panNo             String?        @map("pan_no")
   pledgeDueDays     Int?           @map("pledge_due_days")
   createdAt         DateTime       @default(now()) @map("created_at")
   collectedByUserId Int?           @map("collected_by_user_id")
@@ -99,6 +107,11 @@ model PendingTransaction {
   email       String    @default("")
   phone       String
   whatsapp    String
+  address     String?
+  city        String?
+  state       String?
+  pincode     String?
+  panNo       String?   @map("pan_no")
   amount      Int
   status      String    @default("pending")
   txnId       String?   @map("txn_id")
