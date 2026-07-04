@@ -5,7 +5,7 @@ import type { ContributionDetail, StatementSource } from "@/lib/reconciliation/l
 import {
   DONATION_TYPE_LABEL,
   formatPaiseExact,
-  isMatchedStatus,
+  isDetailViewable,
   STATUS_LABEL,
   statusBadgeClass,
 } from "@/lib/reconciliation/format";
@@ -77,16 +77,17 @@ export function LedgerDetail({
     );
   }
 
-  // Only contributions reconciled against a statement (MATCHED / OVERPAID / UNDERPAID) have
-  // a transaction detail. Guards direct-link access to unmatched rows and unknown ids.
-  if (!detail || !isMatchedStatus(detail.status)) {
+  // Drillable statuses: the matched set (MATCHED / OVERPAID / UNDERPAID) plus UNVERIFIED
+  // (no statement source yet, but donor / address detail is worth viewing). Guards
+  // direct-link access to non-drillable rows (cash, pledge, refunded…) and unknown ids.
+  if (!detail || !isDetailViewable(detail.status)) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <BackButton onBack={onBack} label={backLabel} />
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
-          <h1 className="text-lg font-semibold text-gray-800">No matched transaction</h1>
+          <h1 className="text-lg font-semibold text-gray-800">No detail to show</h1>
           <p className="mt-1 text-sm text-gray-500">
-            This contribution wasn’t reconciled against a gateway or UPI statement, so there’s no
+            This contribution isn’t a drillable line (e.g. cash, pledge or refunded), so there’s no
             transaction detail to show.
           </p>
         </div>
@@ -166,6 +167,26 @@ export function LedgerDetail({
         </dl>
       </div>
 
+      {/* Submitted address & PAN — the address / PAN / donation type captured with the
+          donation itself (block_submissions for wall gifts, birnagar donations for
+          general). Shown only when at least one of these was collected. */}
+      {(detail.address || detail.city || detail.state || detail.pincode || detail.panNo || detail.donationCategory) && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-gray-800">Submitted address &amp; PAN</h2>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+            <div className="sm:col-span-3">
+              <dt className="text-[10px] uppercase tracking-wide text-gray-400">Address</dt>
+              <dd className="whitespace-pre-wrap text-gray-800">{detail.address ?? "—"}</dd>
+            </div>
+            <Field label="City" value={detail.city ?? "—"} />
+            <Field label="State" value={detail.state ?? "—"} />
+            <Field label="Pincode" value={detail.pincode ?? "—"} />
+            <Field label="PAN" value={detail.panNo ?? "—"} mono />
+            {detail.donationCategory && <Field label="Donation type" value={detail.donationCategory} />}
+          </dl>
+        </div>
+      )}
+
       {/* Receipt details (from WhatsApp) — the legal name + address the donor sent over
           WhatsApp for their tax receipt. Shown only when this number has an intake. */}
       {detail.receiptInfo && (
@@ -206,8 +227,17 @@ export function LedgerDetail({
 
         {detail.sources.length === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-500 shadow-sm">
-            This line is marked {STATUS_LABEL[detail.status] ?? detail.status} but the linked
-            statement row could not be located (it may have been removed in a later import).
+            {detail.status === "UNVERIFIED" ? (
+              <>
+                This contribution hasn’t been verified against a statement yet — the gateway / UPI
+                export covering its date hasn’t been uploaded, so the payment can’t be confirmed.
+              </>
+            ) : (
+              <>
+                This line is marked {STATUS_LABEL[detail.status] ?? detail.status} but the linked
+                statement row could not be located (it may have been removed in a later import).
+              </>
+            )}
             {detail.paymentReference && (
               <>
                 {" "}

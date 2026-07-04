@@ -21,6 +21,12 @@ interface BirnagarRow {
   amount: string | null;
   status: string | null;
   created_at: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  pan: string | null;
+  donation_type: string | null;
 }
 
 function rupeesToPaise(amount: string | null): number {
@@ -47,7 +53,7 @@ export async function POST(req: NextRequest) {
     // Collect every page first, THEN swap the cache in one bulk transaction. This
     // keeps the pull fast (no per-row round-trips) and never leaves the cache
     // half-replaced if a page fetch fails — we only touch the DB once all pages load.
-    const rows: { birnagarId: number; source: string; txnId: string | null; name: string; email: string | null; phone: string | null; amountPaise: number; status: string; donatedAt: Date | null }[] = [];
+    const rows: { birnagarId: number; source: string; txnId: string | null; name: string; email: string | null; phone: string | null; amountPaise: number; status: string; donatedAt: Date | null; address: string | null; city: string | null; state: string | null; pincode: string | null; pan: string | null; donationCategory: string | null }[] = [];
     const seen = new Set<number>();
 
     while (pages < MAX_PAGES) {
@@ -78,6 +84,14 @@ export async function POST(req: NextRequest) {
           amountPaise: rupeesToPaise(d.amount),
           status: d.status ?? "",
           donatedAt: d.created_at ? new Date(d.created_at) : null,
+          // Normalize empties to null so the ledger's with/without-address filter
+          // (a plain null / not-null Prisma where) stays clean.
+          address: d.address?.trim() || null,
+          city: d.city?.trim() || null,
+          state: d.state?.trim() || null,
+          pincode: d.pincode?.trim() || null,
+          pan: d.pan?.trim() || null,
+          donationCategory: d.donation_type?.trim() || null,
         });
       }
 

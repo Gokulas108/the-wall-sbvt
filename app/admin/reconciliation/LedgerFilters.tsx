@@ -38,16 +38,20 @@ export function LedgerFilters({
   summary,
   statusFilter,
   typeFilter,
+  addressFilter,
   onToggleStatus,
   onToggleType,
+  onSetAddress,
   onClearStatus,
   onClearType,
 }: {
   summary: ReconciliationSummary;
   statusFilter: string[];
   typeFilter: string[];
+  addressFilter: string | null;
   onToggleStatus: (s: string) => void;
   onToggleType: (t: string) => void;
+  onSetAddress: (v: string | null) => void;
   onClearStatus: () => void;
   onClearType: () => void;
 }) {
@@ -93,6 +97,25 @@ export function LedgerFilters({
               {STATUS_LABEL[st]} · {(s.statusCounts[st] ?? 0).toLocaleString("en-IN")}
             </Tag>
           ))}
+        </div>
+      </div>
+
+      {/* Address presence filter (single-select: All / With / Without) */}
+      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex items-baseline gap-2">
+          <h3 className="text-sm font-semibold text-gray-800">Address</h3>
+          <span className="text-[11px] text-gray-400">Filter by whether a donor address is on file</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Tag active={addressFilter == null} activeClass="bg-gray-900 text-white border-gray-900" onClick={() => onSetAddress(null)}>
+            All
+          </Tag>
+          <Tag active={addressFilter === "yes"} activeClass="bg-emerald-100 text-emerald-800 border-emerald-200" onClick={() => onSetAddress("yes")}>
+            With address
+          </Tag>
+          <Tag active={addressFilter === "no"} activeClass="bg-amber-100 text-amber-800 border-amber-200" onClick={() => onSetAddress("no")}>
+            Without address
+          </Tag>
         </div>
       </div>
     </div>

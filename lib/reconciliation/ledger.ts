@@ -6,6 +6,7 @@ export interface LedgerFilters {
   status?: string[] | null; // multi-select
   channel?: string | null;
   donationType?: string[] | null; // ["general"], ["wall_of_legacy"] or both
+  hasAddress?: string | null; // "yes" | "no" | null (all)
   volunteerId?: number | null;
   blockId?: string | null;
   q?: string | null;
@@ -23,6 +24,12 @@ export interface LedgerRow {
   donorName: string | null;
   donorPhone: string | null;
   donorEmail: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  panNo: string | null;
+  donationCategory: string | null;
   blockId: string | null;
   serialNumber: string | null;
   qty: number;
@@ -54,6 +61,11 @@ export function buildLedgerWhere(f: LedgerFilters): Prisma.ContributionWhereInpu
   else if (wantGeneral) where.sourceType = "birnagar_general";
   else if (wantWall) where.sourceType = "wall_submission";
   else where.sourceType = { not: "cash_bucket" };
+  // With/without address. The pull + reconcile normalize empty addresses to null,
+  // so a plain null / not-null check keeps this expressible as a pure Prisma where
+  // (pagination + count stay intact).
+  if (f.hasAddress === "yes") where.address = { not: null };
+  else if (f.hasAddress === "no") where.address = null;
   if (f.volunteerId != null) where.collectedByUserId = f.volunteerId;
   if (f.blockId) where.blockId = f.blockId.toUpperCase();
   if (f.from || f.to) {
@@ -81,6 +93,12 @@ function toRow(c: {
   donorName: string | null;
   donorPhone: string | null;
   donorEmail: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  panNo: string | null;
+  donationCategory: string | null;
   blockId: string | null;
   serialNumber: string | null;
   qty: number;
@@ -103,6 +121,12 @@ function toRow(c: {
     donorName: c.donorName,
     donorPhone: c.donorPhone,
     donorEmail: c.donorEmail,
+    address: c.address,
+    city: c.city,
+    state: c.state,
+    pincode: c.pincode,
+    panNo: c.panNo,
+    donationCategory: c.donationCategory,
     blockId: c.blockId,
     serialNumber: c.serialNumber,
     qty: c.qty,
@@ -153,6 +177,7 @@ export function filtersFromSearchParams(sp: URLSearchParams): LedgerFilters {
     status: csv(sp.get("status")),
     channel: sp.get("channel"),
     donationType: csv(sp.get("donationType")),
+    hasAddress: sp.get("hasAddress"),
     volunteerId: intOrNull(sp.get("volunteerId")),
     blockId: sp.get("blockId"),
     q: sp.get("q"),

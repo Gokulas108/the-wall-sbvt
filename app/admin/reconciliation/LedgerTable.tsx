@@ -5,7 +5,7 @@ import type { LedgerRow } from "@/lib/reconciliation/ledger";
 import {
   DONATION_TYPE_LABEL,
   formatPaiseExact,
-  isMatchedStatus,
+  isDetailViewable,
   STATUS_LABEL,
   statusBadgeClass,
 } from "@/lib/reconciliation/format";
@@ -14,6 +14,7 @@ export interface LedgerFilterState {
   status: string[];
   channel: string | null;
   donationType: string[];
+  hasAddress: string | null; // "yes" | "no" | null (all)
   q: string | null;
   blockId: string | null;
   from: string | null;
@@ -27,6 +28,7 @@ function buildQuery(f: LedgerFilterState, page: number, pageSize: number): strin
   if (f.status.length) sp.set("status", f.status.join(","));
   if (f.channel) sp.set("channel", f.channel);
   if (f.donationType.length) sp.set("donationType", f.donationType.join(","));
+  if (f.hasAddress) sp.set("hasAddress", f.hasAddress);
   if (f.q) sp.set("q", f.q);
   if (f.blockId) sp.set("blockId", f.blockId);
   if (f.from) sp.set("from", f.from);
@@ -174,6 +176,7 @@ export function LedgerTable({
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Type</th>
               <th className="px-2 py-2">Donor</th>
+              <th className="px-2 py-2">Address</th>
               <th className="px-2 py-2">Channel</th>
               <th className="px-2 py-2">Block / Serial</th>
               <th className="px-2 py-2 text-right">Qty</th>
@@ -188,33 +191,34 @@ export function LedgerTable({
           <tbody className="divide-y divide-gray-100 bg-white">
             {loading && (
               <tr>
-                <td colSpan={12} className="px-2 py-6 text-center text-gray-400">
+                <td colSpan={13} className="px-2 py-6 text-center text-gray-400">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-2 py-6 text-center text-gray-400">
+                <td colSpan={13} className="px-2 py-6 text-center text-gray-400">
                   No contributions match these filters.
                 </td>
               </tr>
             )}
             {!loading &&
               rows.map((r) => {
-                // Clickable when the line was reconciled against a statement
-                // (MATCHED / OVERPAID / UNDERPAID). Note: a row can be matched
-                // without owning a match itself — one payment covering several
-                // names attaches the match to the group's primary line — so we
-                // gate on status, not on a direct match link.
-                const clickable = isMatchedStatus(r.status);
+                // Clickable when the line has a detail page: the matched set
+                // (MATCHED / OVERPAID / UNDERPAID) plus UNVERIFIED (no statement
+                // source yet, but donor / address detail is still worth viewing).
+                // Note: a row can be matched without owning a match itself — one
+                // payment covering several names attaches the match to the group's
+                // primary line — so we gate on status, not on a direct match link.
+                const clickable = isDetailViewable(r.status);
                 // General donations have no fixed expected target → show "—".
                 const isGeneral = r.donationType === "general";
                 return (
                 <tr
                   key={r.id}
                   onClick={clickable ? () => onOpenRow(r.id) : undefined}
-                  title={clickable ? "View transaction detail" : "No matched statement"}
+                  title={clickable ? "View detail" : "No detail to show"}
                   className={clickable ? "cursor-pointer hover:bg-indigo-50/60" : "hover:bg-gray-50"}
                 >
                   <td className="px-2 py-1.5">
@@ -236,6 +240,16 @@ export function LedgerTable({
                   <td className="px-2 py-1.5">
                     <div className="font-medium text-gray-800">{r.donorName || "—"}</div>
                     <div className="text-[10px] text-gray-400">{r.donorPhone || ""}</div>
+                  </td>
+                  <td className="px-2 py-1.5 text-gray-600">
+                    <div className="max-w-[200px] truncate" title={r.address ?? undefined}>
+                      {r.address || "—"}
+                    </div>
+                    {(r.city || r.state || r.pincode) && (
+                      <div className="text-[10px] text-gray-400">
+                        {[r.city, r.state, r.pincode].filter(Boolean).join(", ")}
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-gray-600">{r.paymentChannel}</td>
                   <td className="px-2 py-1.5 text-gray-600">

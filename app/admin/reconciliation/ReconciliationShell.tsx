@@ -75,6 +75,7 @@ const EMPTY_FILTERS: LedgerFilterState = {
   status: [],
   channel: null,
   donationType: [],
+  hasAddress: null,
   q: null,
   blockId: null,
   from: null,
@@ -158,6 +159,7 @@ export function ReconciliationShell({
     if (f.status.length) sp.set("status", f.status.join(","));
     if (f.channel) sp.set("channel", f.channel);
     if (f.donationType.length) sp.set("donationType", f.donationType.join(","));
+    if (f.hasAddress) sp.set("hasAddress", f.hasAddress);
     if (f.q) sp.set("q", f.q);
     if (f.blockId) sp.set("blockId", f.blockId);
     if (f.from) sp.set("from", f.from);
@@ -239,10 +241,16 @@ export function ReconciliationShell({
     setPage(1);
     setFilters((prev) => ({ ...prev, donationType: [] }));
   };
+  // Single-select address-presence filter (null = All, "yes" = with, "no" = without).
+  const setAddressFilter = (v: string | null) => {
+    setPage(1);
+    setFilters((prev) => ({ ...prev, hasAddress: v }));
+  };
   const hasActiveFilters =
     filters.status.length > 0 ||
     filters.channel !== null ||
     filters.donationType.length > 0 ||
+    filters.hasAddress !== null ||
     filters.q !== null ||
     filters.blockId !== null ||
     filters.from !== null ||
@@ -402,8 +410,10 @@ export function ReconciliationShell({
                   summary={summary}
                   statusFilter={filters.status}
                   typeFilter={filters.donationType}
+                  addressFilter={filters.hasAddress}
                   onToggleStatus={toggleStatus}
                   onToggleType={toggleType}
+                  onSetAddress={setAddressFilter}
                   onClearStatus={clearStatus}
                   onClearType={clearType}
                 />

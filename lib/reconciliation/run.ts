@@ -59,6 +59,12 @@ interface Prepared {
     donorName: string | null;
     donorPhone: string | null;
     donorEmail: string | null;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
+    panNo: string | null;
+    donationCategory: string | null;
     blockId: string | null;
     serialNumber: string | null;
     qty: number;
@@ -146,6 +152,13 @@ export async function runReconciliation(opts: {
         donorName: s.name,
         donorPhone: s.phone,
         donorEmail: s.email,
+        address: s.address,
+        city: s.city,
+        state: s.state,
+        pincode: s.pincode,
+        panNo: s.panNo,
+        // donation_type is a birnagar-only field; wall submissions have no equivalent.
+        donationCategory: null,
         blockId: s.blockId,
         serialNumber: s.serialNumber,
         qty: s.qty,
@@ -180,6 +193,12 @@ export async function runReconciliation(opts: {
         donorName: b.name,
         donorPhone: b.phone,
         donorEmail: b.email,
+        address: b.address,
+        city: b.city,
+        state: b.state,
+        pincode: b.pincode,
+        panNo: b.pan,
+        donationCategory: b.donationCategory,
         blockId: null,
         serialNumber: null,
         qty: 0,
@@ -218,6 +237,12 @@ export async function runReconciliation(opts: {
         donorName: st.volunteer?.username ?? null,
         donorPhone: null,
         donorEmail: null,
+        address: null,
+        city: null,
+        state: null,
+        pincode: null,
+        panNo: null,
+        donationCategory: null,
         blockId: null,
         serialNumber: null,
         qty: 0,
@@ -336,6 +361,12 @@ export async function runReconciliation(opts: {
             donorName: p.persist.donorName,
             donorPhone: p.persist.donorPhone,
             donorEmail: p.persist.donorEmail,
+            address: p.persist.address,
+            city: p.persist.city,
+            state: p.persist.state,
+            pincode: p.persist.pincode,
+            panNo: p.persist.panNo,
+            donationCategory: p.persist.donationCategory,
             blockId: p.persist.blockId,
             serialNumber: p.persist.serialNumber,
             qty: p.persist.qty,

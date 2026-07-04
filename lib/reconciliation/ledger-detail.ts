@@ -54,6 +54,16 @@ export interface ContributionDetail {
   donorName: string | null;
   donorPhone: string | null;
   donorEmail: string | null;
+  // Address / PAN / birnagar donation_type the donor submitted, denormalized onto
+  // the contribution at reconcile time (from block_submissions or birnagar_donations).
+  // Distinct from receiptInfo below, which is the legal name + address collected
+  // separately over WhatsApp for the tax receipt.
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  panNo: string | null;
+  donationCategory: string | null;
   blockId: string | null;
   serialNumber: string | null;
   qty: number;
@@ -239,6 +249,12 @@ export async function getContributionDetail(id: number): Promise<ContributionDet
     donorName: c.donorName,
     donorPhone: c.donorPhone,
     donorEmail: c.donorEmail,
+    address: c.address,
+    city: c.city,
+    state: c.state,
+    pincode: c.pincode,
+    panNo: c.panNo,
+    donationCategory: c.donationCategory,
     blockId: c.blockId,
     serialNumber: c.serialNumber,
     qty: c.qty,

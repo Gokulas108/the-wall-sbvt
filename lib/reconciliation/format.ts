@@ -78,3 +78,13 @@ export const MATCHED_STATUSES: ReadonlySet<string> = new Set(["MATCHED", "OVERPA
 export function isMatchedStatus(status: string): boolean {
   return MATCHED_STATUSES.has(status);
 }
+
+// Statuses whose ledger row opens a detail page. Beyond the matched set, UNVERIFIED
+// rows are drillable too: they own no statement source yet (the gateway/UPI export
+// covering their date hasn't been uploaded), but the contribution + donor / address /
+// PAN details are still worth inspecting.
+export const DETAIL_STATUSES: ReadonlySet<string> = new Set([...MATCHED_STATUSES, "UNVERIFIED"]);
+
+export function isDetailViewable(status: string): boolean {
+  return DETAIL_STATUSES.has(status);
+}
